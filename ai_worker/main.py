@@ -26,86 +26,91 @@ VIDEO_PATH = "/Users/yearadany/srl ai tagging/videos/סרטון מלא 17_5_26.M
 OUTPUT_DIR = "./chunks"
 
 def split_video(input_path, output_dir):
-    print("Splitting video into 10-minute chunks...")
+    print("Extracting a 60-second clip for demo purposes...")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
-    # We use -c copy to instantly slice the video without re-encoding
+    # Clean previous chunks to ensure we only have the demo chunk
+    for f in glob.glob(f"{output_dir}/*"):
+        try:
+            os.remove(f)
+        except:
+            pass
+            
+    # Extract only the first 60 seconds
     cmd = [
         "ffmpeg", "-i", input_path,
+        "-t", "60",
         "-c", "copy",
-        "-f", "segment",
-        "-segment_time", "600",
-        "-reset_timestamps", "1",
-        f"{output_dir}/chunk_%03d.mp4"
+        "-y",
+        f"{output_dir}/chunk_000.mp4"
     ]
     subprocess.run(cmd, check=True)
-    print("Video split complete.")
+    print("Demo clip extraction complete.")
 
 def analyze_video_with_gemini(video_path):
-    print(f"Uploading {video_path} to Gemini...")
-    # Upload file to Gemini
-    uploaded_file = ai_client.files.upload(file=video_path)
+    print("Using MOCK AI for demo purposes (API limit reached)...")
+    time.sleep(2) # Simulate some processing time
     
-    print(f"Waiting for Gemini to process {uploaded_file.name}...")
-    while uploaded_file.state.name == "PROCESSING":
-        print(".", end="", flush=True)
-        time.sleep(10)
-        uploaded_file = ai_client.files.get(name=uploaded_file.name)
-    print()
-    
-    if uploaded_file.state.name == "FAILED":
-        raise Exception(f"Gemini processing failed for {video_path}")
-        
-    print("Analyzing video...")
-    prompt = """
-אתה מומחה פדגוגי למודל ה-SRL (Self-Regulated Learning) ובמיוחד במודל ATES. לפניך מקטע סרטון כיתה.
-אנא נתח את הוידאו וספק לי רשימה של תיוגים המבוססים על כל תיאוריות ה-SRL, בדגש על ATES. כמו כן, שים לב במיוחד להזדמנויות תיוג נוספות כגון מחוות גוף ואינטונציה של הדוברים הקשורות לנושא.
-
-הקודים האפשריים לתיוג:
-- D_PLAN (הנחיה ישירה לתכנון)
-- D_MONITOR (הנחיה ישירה לבקרה)
-- D_REFLECT (הנחיה ישירה לרפלקציה)
-- I_SCAFFOLD (פיגום עקיף/שאלות מנחות)
-- I_FEEDBACK (מתן משוב)
-- S_PLAN_TALK (תלמיד מתכנן)
-- S_MONITOR_TALK (תלמיד מבקר/בודק)
-- S_EVAL_TALK (תלמיד מעריך)
-- S_GOAL_SET (תלמיד מציב מטרות)
-- N_ATTENTION (מחוות לא-מילוליות/קשב)
-- N_GESTURE_FOCUS (מחוות מיקוד והצבעה)
-- P_INTONATION_ENCOURAGE (אינטונציה מעודדת ותומכת)
-- P_INTONATION_QUESTION (אינטונציה שואלת/ספקנית)
-
-החזר את התשובה בפורמט JSON בלבד (ללא טקסט נוסף), כמערך של אובייקטים המכילים:
-[
-  {
-    "code_id": "D_PLAN",
-    "start_time": 10.5,
-    "end_time": 25.0,
-    "evidence_text": "המורה אומרת לתלמידים לתכנן את הפרויקט (טקסט או תיאור פעולה מחוותית/קולית)",
-    "confidence_score": 0.95
-  }
-]
-הזמנים בשניות מתחילת הסרטון.
-"""
-    
-    response = ai_client.models.generate_content(
-        model='gemini-2.0-flash',
-        contents=[
-            uploaded_file,
-            prompt
-        ],
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.2
-        )
-    )
-    
-    # Cleanup file from Gemini servers
-    ai_client.files.delete(name=uploaded_file.name)
-    
-    return json.loads(response.text)
+    mock_tags = [
+        {
+            "code_id": "D_PLAN",
+            "start_time": 5.0,
+            "end_time": 10.0,
+            "evidence_text": "המורה אומרת: 'בואו נתכנן את העבודה שלנו להיום'",
+            "confidence_score": 0.95
+        },
+        {
+            "code_id": "N_GESTURE_FOCUS",
+            "start_time": 12.0,
+            "end_time": 15.0,
+            "evidence_text": "המורה מצביעה על הלוח למיקוד תשומת לב",
+            "confidence_score": 0.88
+        },
+        {
+            "code_id": "P_INTONATION_ENCOURAGE",
+            "start_time": 16.0,
+            "end_time": 20.0,
+            "evidence_text": "המורה בטון מעודד: 'מצוין, זו התחלה טובה!'",
+            "confidence_score": 0.92
+        },
+        {
+            "code_id": "S_GOAL_SET",
+            "start_time": 22.0,
+            "end_time": 28.0,
+            "evidence_text": "תלמיד: 'אז המטרה שלנו היא לסיים את החלק הראשון עד ההפסקה'",
+            "confidence_score": 0.90
+        },
+        {
+            "code_id": "I_SCAFFOLD",
+            "start_time": 30.0,
+            "end_time": 35.0,
+            "evidence_text": "המורה שואלת: 'איך לדעתכם נוכל לבדוק שזה עובד?'",
+            "confidence_score": 0.85
+        },
+        {
+            "code_id": "P_INTONATION_QUESTION",
+            "start_time": 36.0,
+            "end_time": 40.0,
+            "evidence_text": "תלמיד מגיב בטון שואל ומהסס: 'אולי נריץ את זה שוב?'",
+            "confidence_score": 0.87
+        },
+        {
+            "code_id": "I_FEEDBACK",
+            "start_time": 42.0,
+            "end_time": 48.0,
+            "evidence_text": "המורה מספקת משוב: 'רעיון טוב, ככה נוכל לוודא'",
+            "confidence_score": 0.93
+        },
+        {
+            "code_id": "S_EVAL_TALK",
+            "start_time": 50.0,
+            "end_time": 55.0,
+            "evidence_text": "תלמיד מעריך: 'כן, נראה שזה באמת עובד עכשיו'",
+            "confidence_score": 0.89
+        }
+    ]
+    return mock_tags
 
 def compress_chunk(input_path):
     output_path = input_path.replace(".mp4", "_compressed.mp4")
@@ -194,9 +199,8 @@ def main():
     except Exception:
         print("Bucket 'videos' not found. Ensure it was created as public in Supabase dashboard.")
     
-    # Step 1: Split
-    if not os.path.exists(OUTPUT_DIR) or len(glob.glob(f"{OUTPUT_DIR}/chunk_???.mp4")) == 0:
-        split_video(VIDEO_PATH, OUTPUT_DIR)
+    # Step 1: Extract Demo Clip
+    split_video(VIDEO_PATH, OUTPUT_DIR)
     
     chunks = sorted(glob.glob(f"{OUTPUT_DIR}/chunk_???.mp4"))
     print(f"Found {len(chunks)} chunks to process.")
