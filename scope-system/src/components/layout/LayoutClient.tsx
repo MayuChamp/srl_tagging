@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { Sidebar } from "./Sidebar";
 
 interface Props {
@@ -46,6 +47,17 @@ export function LayoutClient({ children }: Props) {
   const toggleTheme = () => {
     setTheme((t) => (t === "dark" ? "light" : "dark"));
   };
+
+  const pathname = usePathname();
+  const isLoginPage = pathname === "/login";
+
+  if (isLoginPage) {
+    return (
+      <main className="flex-1 w-full min-h-screen bg-zinc-950 flex flex-col items-center justify-center">
+        {children}
+      </main>
+    );
+  }
 
   return (
     <>

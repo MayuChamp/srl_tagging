@@ -217,6 +217,36 @@ export function Sidebar({ isCollapsed, onToggle, onThemeToggle, theme }: Sidebar
             : <ChevronLeft size={15} className="shrink-0" />
           }
         </button>
+
+        {/* Rights / Footer Info */}
+        <div className="pt-2 mt-1 border-t border-border/30">
+          <AnimatePresence mode="wait">
+            {!isCollapsed ? (
+              <motion.div
+                key="expanded-copyright"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: 0.15 }}
+                className="text-[10px] text-muted-foreground/40 text-center font-medium leading-relaxed select-none px-1"
+              >
+                Yeara dany, Bar Ilan University 2026
+              </motion.div>
+            ) : (
+              <motion.div
+                key="collapsed-copyright"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0.4 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="text-[9px] text-muted-foreground/30 text-center font-bold select-none cursor-help"
+                title="Yeara dany, Bar Ilan University 2026"
+              >
+                © 2026
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </motion.aside>
   );

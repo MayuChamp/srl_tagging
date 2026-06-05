@@ -15,7 +15,7 @@ export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState("profile");
   const [saved, setSaved] = useState(false);
   const [profile, setProfile] = useState({ name: "Researcher", email: "", institution: "", role: "researcher" });
-  const [aiSettings, setAiSettings] = useState({ model: "claude-sonnet-4-6", confidenceThreshold: 0.66, autoTag: true, multimodal: true, language: "he" });
+  const [aiSettings, setAiSettings] = useState({ model: "gemini-1-5-pro", confidenceThreshold: 0.66, autoTag: true, multimodal: true, language: "he" });
   const [notifications, setNotifications] = useState({ onProcessingComplete: true, onTagAdded: false, emailSummary: false });
 
   const handleSave = () => {
@@ -90,11 +90,10 @@ export default function SettingsPage() {
 
             {activeSection === "ai" && (
               <>
-                <Field label="Claude Model">
+                <Field label="Gemini Model">
                   <Select value={aiSettings.model} onChange={v => setAiSettings({ ...aiSettings, model: v })}>
-                    <option value="claude-sonnet-4-6">Claude Sonnet 4.6 — Recommended</option>
-                    <option value="claude-opus-4-7">Claude Opus 4.7 — Most Capable</option>
-                    <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 — Fastest</option>
+                    <option value="gemini-1-5-pro">Gemini 1.5 Pro — Recommended</option>
+                    <option value="gemini-1-5-flash">Gemini 1.5 Flash — Fastest</option>
                   </Select>
                 </Field>
                 <Field label="Confidence Threshold" description="Tags below this threshold are flagged for review.">
