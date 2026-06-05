@@ -9,6 +9,10 @@ import subprocess
 import os
 import numpy as np
 
+DEFAULT_PITCH_FLOOR = 75
+DEFAULT_PITCH_CEILING = 400
+DEFAULT_THRESHOLD_DB = 42.0
+
 
 def extract_audio_wav(video_path: str) -> str:
     """Extract 16kHz mono WAV from video for Praat analysis."""
@@ -22,7 +26,7 @@ def extract_audio_wav(video_path: str) -> str:
     return audio_path
 
 
-def analyze_prosody(audio_path: str, segment_duration: float = 5.0) -> list:
+def analyze_prosody(audio_path: str, segment_duration: float = 5.0, pitch_floor=DEFAULT_PITCH_FLOOR, pitch_ceiling=DEFAULT_PITCH_CEILING) -> list:
     """
     Analyze prosodic features in fixed-duration windows using Praat.
 
@@ -34,8 +38,8 @@ def analyze_prosody(audio_path: str, segment_duration: float = 5.0) -> list:
     snd = parselmouth.Sound(audio_path)
     total_duration = snd.duration
 
-    pitch_obj = snd.to_pitch(time_step=0.01, pitch_floor=75, pitch_ceiling=400)
-    intensity_obj = snd.to_intensity(minimum_pitch=75, time_step=0.01)
+    pitch_obj = snd.to_pitch(time_step=0.01, pitch_floor=pitch_floor, pitch_ceiling=pitch_ceiling)
+    intensity_obj = snd.to_intensity(minimum_pitch=pitch_floor, time_step=0.01)
 
     segments = []
     t = 0.0
@@ -53,7 +57,7 @@ def analyze_prosody(audio_path: str, segment_duration: float = 5.0) -> list:
                 val = intensity_obj.get_value(pt)
                 if val is not None and not np.isnan(val):
                     raw_intensity.append(val)
-            except Exception:
+            except parselmouth.PraatError:
                 pass
 
         pitch_mean = float(np.mean(voiced)) if voiced else None
@@ -86,7 +90,7 @@ def analyze_prosody(audio_path: str, segment_duration: float = 5.0) -> list:
     return segments
 
 
-def detect_pauses(audio_path: str, min_pause_duration: float = 0.5) -> list:
+def detect_pauses(audio_path: str, min_pause_duration: float = 0.5, threshold_db: float = DEFAULT_THRESHOLD_DB, pitch_floor: float = DEFAULT_PITCH_FLOOR) -> list:
     """
     Detect silences/pauses based on intensity threshold.
     Threshold: 42dB (calibrated for typical classroom recording).
@@ -94,8 +98,7 @@ def detect_pauses(audio_path: str, min_pause_duration: float = 0.5) -> list:
     import parselmouth
 
     snd = parselmouth.Sound(audio_path)
-    intensity_obj = snd.to_intensity(minimum_pitch=75, time_step=0.01)
-    threshold_db = 42.0
+    intensity_obj = snd.to_intensity(minimum_pitch=pitch_floor, time_step=0.01)
 
     pauses = []
     in_pause = False
@@ -106,7 +109,7 @@ def detect_pauses(audio_path: str, min_pause_duration: float = 0.5) -> list:
         try:
             val = intensity_obj.get_value(t)
             is_silent = (val is None or np.isnan(val) or val < threshold_db)
-        except Exception:
+        except parselmouth.PraatError:
             is_silent = True
 
         if is_silent and not in_pause:

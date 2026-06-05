@@ -31,9 +31,11 @@ interface SidebarProps {
   onToggle: () => void;
   onThemeToggle: () => void;
   theme: "dark" | "light";
+  mobileOpen?: boolean;
+  setMobileOpen?: (open: boolean) => void;
 }
 
-export function Sidebar({ isCollapsed, onToggle, onThemeToggle, theme }: SidebarProps) {
+export function Sidebar({ isCollapsed, onToggle, onThemeToggle, theme, mobileOpen, setMobileOpen }: SidebarProps) {
   const pathname = usePathname();
 
   const handleLogout = async () => {
@@ -97,12 +99,24 @@ export function Sidebar({ isCollapsed, onToggle, onThemeToggle, theme }: Sidebar
   };
 
   return (
-    <motion.aside
-      animate={{ width: isCollapsed ? 68 : 240 }}
-      transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-      className="flex flex-col h-screen shrink-0 border-r border-border bg-accent/40 overflow-hidden"
-      style={{ backdropFilter: "blur(8px)" }}
-    >
+    <>
+      {/* Mobile Backdrop */}
+      {mobileOpen && (
+        <div 
+          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 md:hidden"
+          onClick={() => setMobileOpen?.(false)}
+        />
+      )}
+      <motion.aside
+        animate={{ width: isCollapsed ? 68 : 240 }}
+        transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+        className={cn(
+          "flex flex-col h-screen shrink-0 border-r border-border bg-accent/40 overflow-hidden transition-transform duration-300",
+          "fixed inset-y-0 left-0 z-50 md:relative",
+          mobileOpen ? "translate-x-0 !w-[240px]" : "-translate-x-full md:translate-x-0"
+        )}
+        style={{ backdropFilter: "blur(8px)" }}
+      >
       {/* Brand top accent line */}
       <div className="h-[2px] w-full shrink-0 bg-gradient-to-r from-primary/60 via-violet-400/80 to-primary/30" />
 
@@ -256,5 +270,6 @@ export function Sidebar({ isCollapsed, onToggle, onThemeToggle, theme }: Sidebar
         </div>
       </div>
     </motion.aside>
+    </>
   );
 }

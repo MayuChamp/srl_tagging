@@ -182,6 +182,11 @@ export function DashboardClient({ videos, tags }: Props) {
             <div className="relative shrink-0">
               <button
                 onClick={() => setDropdownOpen(!dropdownOpen)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setDropdownOpen(false);
+                }}
+                aria-haspopup="listbox"
+                aria-expanded={dropdownOpen}
                 className="flex items-center gap-2 bg-secondary border border-border text-sm rounded-xl px-3.5 py-2 hover:bg-secondary/80 transition-all min-w-[200px] justify-between"
               >
                 <span className="truncate max-w-[160px] text-[13px]">{selectedVideo?.title ?? "Select video"}</span>
@@ -236,6 +241,12 @@ export function DashboardClient({ videos, tags }: Props) {
                 <Video size={24} className="opacity-40" />
               </div>
               <p className="text-sm">No videos uploaded yet.</p>
+              <button
+                onClick={() => router.push("/tagging")}
+                className="mt-2 flex items-center gap-2 bg-primary/20 text-primary px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/30 transition-colors"
+              >
+                <Plus size={16} /> Upload Video
+              </button>
             </div>
           )}
         </div>
@@ -309,7 +320,7 @@ export function DashboardClient({ videos, tags }: Props) {
                 </div>
                 <div className="text-center">
                   <p className="text-sm font-medium">No highlights yet</p>
-                  <p className="text-xs mt-1 opacity-60">Tags will appear here after AI analysis</p>
+                  <p className="text-xs mt-1 opacity-60">Run the AI analyzer to generate highlights</p>
                 </div>
               </div>
             )}

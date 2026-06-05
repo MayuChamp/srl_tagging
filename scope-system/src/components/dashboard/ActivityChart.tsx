@@ -9,6 +9,7 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  Brush,
 } from "recharts";
 
 type Tag = {
@@ -91,6 +92,14 @@ export function ActivityChart({ tags }: ActivityChartProps) {
             radius={[4, 4, 0, 0]}
             name="SRL Events"
           />
+          {data.length > 5 && (
+            <Brush 
+              dataKey="label" 
+              height={25} 
+              stroke="#3b82f6" 
+              fill="var(--background)"
+            />
+          )}
         </BarChart>
       </ResponsiveContainer>
     </div>

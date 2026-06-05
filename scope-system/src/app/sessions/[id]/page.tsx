@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
-import { type VideoMarker } from "@/components/video/VideoPlayer";
+import { type VideoMarker, type Caption } from "@/components/video/VideoPlayer";
 import { BookOpen, Tag, Calendar, Video, Clock, RotateCcw, ArrowLeft } from "lucide-react";
 import { SessionViewPlayer } from "./SessionViewPlayer";
 
@@ -129,6 +129,7 @@ export default async function SessionDetailPage({
     null;
   const videoTitle: string | null =
     (analysis.videos as { title: string } | null)?.title || null;
+  const captions: Caption[] = analysis.summary_metrics?.captions || [];
 
   const markers: VideoMarker[] = events.map(group => {
     const first = group[0];
@@ -213,7 +214,7 @@ export default async function SessionDetailPage({
         ))}
       </div>
 
-      <SessionViewPlayer videoUrl={videoUrl} markers={markers} events={events} />
+      <SessionViewPlayer videoUrl={videoUrl} markers={markers} events={events} captions={captions} />
 
     </div>
   );

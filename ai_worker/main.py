@@ -32,9 +32,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 GEMINI_MODEL = "gemini-2.5-flash"
 
-VIDEO_PATH = "/Users/yearadany/srl ai tagging/videos/סרטון של המורה פז.mov"
-VIDEO_TITLE = "המורה פז"
-OUTPUT_DIR = "./chunks"
+VIDEO_PATH = os.getenv("VIDEO_PATH", "/Users/yearadany/srl ai tagging/videos/סרטון של המורה פז.mov")
+VIDEO_TITLE = os.getenv("VIDEO_TITLE", "המורה פז")
+OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./chunks")
 
 def split_video(input_path, output_dir, chunk_duration=600):
     print(f"Splitting video into {chunk_duration}s chunks...")
@@ -44,7 +44,7 @@ def split_video(input_path, output_dir, chunk_duration=600):
     for f in glob.glob(f"{output_dir}/*"):
         try:
             os.remove(f)
-        except:
+        except OSError:
             pass
 
     result = subprocess.run(
@@ -317,7 +317,11 @@ def analyze_video_with_gemini(video_path):
                 }
             )
         )
-        transcript_data = json.loads(transcript_response.text)
+        try:
+            transcript_data = json.loads(transcript_response.text)
+        except json.JSONDecodeError:
+            print(f"WARNING: Failed to parse Gemini response as JSON. Raw response: {transcript_response.text}")
+            transcript_data = {}
         segments = transcript_data.get("segments", [])
         transcript_text = "\n".join(
             f"[{s['start']:.1f}s - {s['end']:.1f}s]: {s['text']}"
@@ -389,7 +393,11 @@ def analyze_video_with_gemini(video_path):
         )
     )
 
-    result = json.loads(analysis_response.text)
+    try:
+        result = json.loads(analysis_response.text)
+    except json.JSONDecodeError:
+        print(f"WARNING: Failed to parse Gemini response as JSON. Raw response: {analysis_response.text}")
+        result = {}
     events = result.get("events", [])
     total_codes = sum(len(e.get("code_ids", [])) for e in events)
     print(f"Gemini identified {len(events)} events ({total_codes} total code labels).")
@@ -422,9 +430,13 @@ def process_chunk(chunk_path, chunk_index):
     
     # 1. Upload to Supabase Storage
     print(f"Uploading {compressed_file_name} to Supabase Storage...")
-    with open(compressed_path, 'rb') as f:
-        # Use upsert to overwrite if it failed previously
-        supabase.storage.from_("videos").upload(compressed_file_name, f, file_options={"upsert": "true"})
+    try:
+        with open(compressed_path, 'rb') as f:
+            # Use upsert to overwrite if it failed previously
+            supabase.storage.from_("videos").upload(compressed_file_name, f, file_options={"upsert": "true"})
+    except Exception as e:
+        print(f"Error uploading to Supabase storage: {e}")
+        return
     
     # Get public URL
     public_url = supabase.storage.from_("videos").get_public_url(compressed_file_name)
@@ -437,6 +449,9 @@ def process_chunk(chunk_path, chunk_index):
         "status": "processing"
     }).execute()
     
+    if not video_res.data:
+        print("Error: Failed to insert video into database.")
+        return
     video_id = video_res.data[0]['id']
     
     # Create analysis session
@@ -444,6 +459,10 @@ def process_chunk(chunk_path, chunk_index):
         "video_id": video_id,
         "is_ai_generated": True
     }).execute()
+    
+    if not analysis_res.data:
+        print("Error: Failed to create analysis session.")
+        return
     analysis_id = analysis_res.data[0]['id']
     
     # 3. Analyze with Gemini
@@ -516,6 +535,9 @@ def process_pending_videos():
                 "video_id": video_id,
                 "is_ai_generated": True
             }).execute()
+            if not analysis_res.data:
+                print(f"Error: Failed to create analysis session for video {video_id}.")
+                continue
         else:
             # Clear stale tags from any previous partial run before re-inserting
             supabase.table("tags").delete().eq("analysis_id", analysis_res.data[0]["id"]).execute()

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { VideoPlayer, type VideoMarker } from "@/components/video/VideoPlayer";
+import { VideoPlayer, type VideoMarker, type Caption } from "@/components/video/VideoPlayer";
 import { Video, Play } from "lucide-react";
 
 const CODE_COLORS: Record<string, string> = {
@@ -40,9 +40,10 @@ interface Props {
   videoUrl: string | null;
   markers: VideoMarker[];
   events: EventGroup[];
+  captions?: Caption[];
 }
 
-export function SessionViewPlayer({ videoUrl, markers, events }: Props) {
+export function SessionViewPlayer({ videoUrl, markers, events, captions = [] }: Props) {
   const [seekRequest, setSeekRequest] = useState<{ time: number; seq: number } | null>(null);
 
   const seekTo = (time: number) => {
@@ -54,7 +55,7 @@ export function SessionViewPlayer({ videoUrl, markers, events }: Props) {
       {/* Video */}
       <div className="lg:col-span-2">
         {videoUrl ? (
-          <VideoPlayer url={videoUrl} markers={markers} seekRequest={seekRequest} />
+          <VideoPlayer url={videoUrl} markers={markers} seekRequest={seekRequest} captions={captions} />
         ) : (
           <div className="bg-card border border-dashed border-border rounded-xl flex flex-col items-center justify-center gap-3 h-48 text-muted-foreground text-sm">
             <Video size={32} className="opacity-30" />
