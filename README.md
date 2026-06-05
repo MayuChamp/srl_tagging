@@ -1,5 +1,33 @@
 # SRL AI Tagging System
 
+---
+
+## 📖 הסבר קצר למשתמשים (עברית)
+
+### מה המערכת עושה?
+
+מערכת זו מאפשרת **ניתוח אוטומטי של סרטוני למידה** באמצעות בינה מלאכותית.
+היא מזהה ומתייגת אוטומטית דפוסי **למידה מווסתת עצמית (SRL)** בתוך הסרטונים — כמו תכנון, ניטור עצמי, הערכה, ויסות רגשי ועוד.
+
+**מה קורה מאחורי הקלעים:**
+- **ה-Worker (Python)** — קורא את קבצי הווידאו, מפצל אותם לקטעים קצרים, מחלץ שמע, שולח לניתוח של Google Gemini וניתוח פרוזודי (Praat), ומעלה את התוצאות למסד הנתונים.
+- **הדשבורד (Next.js)** — ממשק ויזואלי לצפייה, עריכה וניהול של התיוגים שנוצרו.
+
+---
+
+### 🚀 שתי דרכים להשתמש במערכת
+
+#### 1. המערכת המקוונת (מומלץ למחקר)
+גש ישירות לכתובת המערכת המקוונת — ללא צורך בהתקנה.
+ניתן לצפות בסרטונים, לראות תיוגים, לערוך ולייצא נתונים ישירות מהדפדפן.
+
+#### 2. הרצה מקומית מ-GitHub (למפתחים / הרצת ה-Worker)
+כדי להריץ את ה-Worker המקומי (עיבוד סרטונים חדשים), יש להוריד את הקוד מ-GitHub ולעקוב אחרי ההוראות המפורטות בהמשך ה-README הזה.
+> דרישות מוקדמות, הגדרת משתני סביבה והוראות הרצה מפורטות — ראו בהמשך.
+
+---
+
+
 This repository contains the code for the **Multimodal Self-Regulated Learning (SRL) Analysis System**. It consists of a Next.js web dashboard (`scope-system`) for viewing and managing video tags, and a Python background worker (`ai_worker`) that processes videos and automatically extracts SRL tags using Google Gemini and Praat prosodic analysis.
 
 ---
