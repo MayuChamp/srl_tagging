@@ -21,14 +21,21 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=os.path.join(_DIR, "../scope-system/.env.local"))
 
 from supabase import create_client, Client, ClientOptions
-from main import analyze_video_with_gemini
 
 SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     print(f"FATAL: Supabase credentials not found. Checked: {os.path.join(_DIR, '../scope-system/.env.local')}")
     sys.exit(1)
+
+if not GEMINI_API_KEY:
+    print(f"FATAL: GEMINI_API_KEY not found. Checked: {os.path.join(_DIR, '../scope-system/.env.local')}")
+    sys.exit(1)
+
+# Delayed import — main.py calls genai.Client() at module load, which needs GEMINI_API_KEY set
+from main import analyze_video_with_gemini
 
 opts = ClientOptions(postgrest_client_timeout=600)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY, options=opts)

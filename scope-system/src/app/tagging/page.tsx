@@ -219,7 +219,7 @@ function TaggingModeInner() {
         if (data.status === "completed" && data.tags?.length) {
           setAiStatus("completed");
           setAiTags(data.tags);
-        } else if (data.status === "processing") {
+        } else if (data.status === "processing" || data.status === "pending") {
           setAiStatus("processing");
         }
       } catch {
@@ -385,15 +385,15 @@ function TaggingModeInner() {
 
       const { data: tagData } = await supabase
         .from("tags")
-        .select("id, code_id, start_time, end_time, evidence_text, confidence_score")
+        .select("id, code_id, start_time, end_time, evidence_text, confidence_score, created_at")
         .eq("analysis_id", sessionId)
         .order("start_time", { ascending: true })
-        .order("id", { ascending: true });
+        .order("created_at", { ascending: true });
 
       // Group rows belonging to the same multi-code event. Rows from the same event were
       // inserted consecutively and share identical time+evidence, so we use a run-length
       // approach: a new group starts whenever the key changes from the previous row.
-      type TagRow = { id: string; code_id: string; start_time: number; end_time: number; evidence_text: string | null; confidence_score: number | null };
+      type TagRow = { id: string; code_id: string; start_time: number; end_time: number; evidence_text: string | null; confidence_score: number | null; created_at: string | null };
       const grouped = new Map<string, TagRow[]>();
       let prevKey = "";
       let groupSeq = 0;

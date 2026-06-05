@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     await supabase.from("analyses").delete().eq("video_id", videoId).eq("is_ai_generated", true);
   }
 
-  await supabase.from("videos").update({ status: "processing" }).eq("id", videoId);
+  await supabase.from("videos").update({ status: "pending" }).eq("id", videoId);
 
   return NextResponse.json({ status: "processing" });
 }

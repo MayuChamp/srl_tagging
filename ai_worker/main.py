@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import subprocess
 import glob
@@ -10,12 +11,18 @@ from google import genai
 from google.genai import types
 from audio_analyzer import analyze_audio_prosody
 
+_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Load env variables from Next.js project
-load_dotenv(dotenv_path="../scope-system/.env.local")
+load_dotenv(dotenv_path=os.path.join(_DIR, "../scope-system/.env.local"))
 
 # Supabase init
 SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    print(f"FATAL: Supabase credentials not found. Checked: {os.path.join(_DIR, '../scope-system/.env.local')}")
+    sys.exit(1)
 
 opts = ClientOptions(postgrest_client_timeout=600)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY, options=opts)
@@ -491,6 +498,8 @@ def process_pending_videos():
         file_name = os.path.basename(storage_path.split("?")[0])
         local_path = os.path.join(OUTPUT_DIR, file_name)
 
+        supabase.table("videos").update({"status": "processing"}).eq("id", video_id).execute()
+
         if not os.path.exists(local_path):
             print(f"Downloading {file_name} from storage...")
             r = requests.get(storage_path, stream=True, timeout=300)
@@ -507,6 +516,9 @@ def process_pending_videos():
                 "video_id": video_id,
                 "is_ai_generated": True
             }).execute()
+        else:
+            # Clear stale tags from any previous partial run before re-inserting
+            supabase.table("tags").delete().eq("analysis_id", analysis_res.data[0]["id"]).execute()
         analysis_id = analysis_res.data[0]["id"]
 
         try:
@@ -554,7 +566,8 @@ def main():
 
     # Then: process new video from disk; check completion per-chunk so partial runs resume correctly
     if os.path.exists(VIDEO_PATH):
-        split_video(VIDEO_PATH, OUTPUT_DIR)
+        if not glob.glob(f"{OUTPUT_DIR}/chunk_???.mp4"):
+            split_video(VIDEO_PATH, OUTPUT_DIR)
         chunks = sorted(glob.glob(f"{OUTPUT_DIR}/chunk_???.mp4"))
         print(f"Found {len(chunks)} chunk(s) to process.")
         for i, chunk in enumerate(chunks):
