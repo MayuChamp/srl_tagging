@@ -18,8 +18,9 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // Supabase requires an email, so we map the username to a pseudo-email under the hood
-      const email = `${username.trim().toLowerCase()}@scope.local`;
+      // If the user typed an email, use it directly. Otherwise, map the username to a pseudo-email.
+      const rawInput = username.trim().toLowerCase();
+      const email = rawInput.includes("@") ? rawInput : `${rawInput}@scope.local`;
 
       const { error: authError } = await supabase.auth.signInWithPassword({
         email,
@@ -60,7 +61,7 @@ export default function LoginPage() {
             </div>
             <input
               type="text"
-              placeholder="Username"
+              placeholder="Email or Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-zinc-950 border border-zinc-800 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-white placeholder:text-zinc-600"
