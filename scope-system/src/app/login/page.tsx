@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Lock, User, LogIn, Loader2 } from "lucide-react";
+import { supabase } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -17,18 +18,19 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+      // Supabase requires an email, so we map the username to a pseudo-email under the hood
+      const email = `${username.trim().toLowerCase()}@scope.local`;
+
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
 
-      if (res.ok) {
+      if (authError) {
+        setError(authError.message);
+      } else {
         // Force hard reload so middleware allows us through and layout re-mounts
         window.location.href = "/";
-      } else {
-        const data = await res.json();
-        setError(data.error || "Login failed");
       }
     } catch (err) {
       setError("An unexpected error occurred");

@@ -9,6 +9,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { supabase } from "@/lib/supabase/client";
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -34,6 +35,11 @@ interface SidebarProps {
 
 export function Sidebar({ isCollapsed, onToggle, onThemeToggle, theme }: SidebarProps) {
   const pathname = usePathname();
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  };
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -172,6 +178,7 @@ export function Sidebar({ isCollapsed, onToggle, onThemeToggle, theme }: Sidebar
 
         {/* Logout */}
         <button
+          onClick={handleLogout}
           title={isCollapsed ? "Logout" : undefined}
           className={cn(
             "flex items-center gap-3 rounded-xl text-muted-foreground hover:bg-secondary/80 hover:text-foreground transition-all",
