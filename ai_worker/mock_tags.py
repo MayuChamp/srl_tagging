@@ -3,13 +3,36 @@ import random
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
-load_dotenv(dotenv_path="../ates-system/.env.local")
+load_dotenv(dotenv_path="../scope-system/.env.local")
 
 SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-CODES = ["D_PLAN", "D_MONITOR", "D_REFLECT", "I_SCAFFOLD", "S_PLAN_TALK", "S_MONITOR_TALK", "N_ATTENTION"]
+CODES = [
+    # TDS – Teacher Direct Strategy Instruction
+    "TDS_COG", "TDS_META", "TDS_MOT", "TDS_NONE",
+    # EX – Explicitness
+    "EX_IMPL", "EX_PART", "EX_EXPL", "EX_NA",
+    # SRL – Process Codes
+    "SRL_GOAL", "SRL_PLAN", "SRL_COG", "SRL_MON", "SRL_CTRL", "SRL_REFL", "SRL_HELP", "SRL_CONTEXT",
+    # ST – Student Uptake
+    "ST_PLAN", "ST_MON", "ST_HELP",
+    # SCI – Science-Specific SRL
+    "SCI_DATA", "SCI_TRANSFER", "SCI_ARG",
+    # TA – Teacher Adaptation
+    "TA0", "TA1", "TA2", "TA3",
+    # MO – Missed Opportunities
+    "MO_EXPL", "MO_MON", "MO_EVID", "MO_REFL", "MO_AGENCY", "MO_HELP",
+    # Q – Episode Quality
+    "Q0", "Q1", "Q2", "Q3",
+    # EV – Evidence Strength
+    "EV0", "EV1", "EV2", "EV3",
+    # Nonverbal & Prosodic
+    "N_MODELING", "N_ATTENTION_GUIDING", "N_COLLAB_STRUCTURE", "N_EMOTION_DISPLAY",
+    "N_ATTENTION", "N_GESTURE_FOCUS",
+    "P_INTONATION_ENCOURAGE", "P_INTONATION_QUESTION",
+]
 
 print("Fetching failed videos to mock tags...")
 res = supabase.table("videos").select("*").eq("status", "failed").execute()

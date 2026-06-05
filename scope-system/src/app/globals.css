@@ -1,0 +1,156 @@
+@import "tailwindcss";
+
+/* ── Dark mode (default) ─────────────────────────────────────────────────── */
+:root {
+  --background: #08080d;
+  --foreground: #f0effe;
+  --card: #111118;
+  --card-foreground: #f0effe;
+  --primary: #6d6cf9;
+  --primary-foreground: #ffffff;
+  --secondary: #1c1b27;
+  --secondary-foreground: #c8c7dc;
+  --muted: #1c1b27;
+  --muted-foreground: #8a89a8;
+  --accent: #15141e;
+  --accent-foreground: #f0effe;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.06);
+  --ring: #6d6cf9;
+  --destructive: #f04444;
+  --destructive-foreground: #ffffff;
+
+  --shadow-sm:  0 1px 3px rgb(0 0 0 / 0.3), 0 1px 2px rgb(0 0 0 / 0.2);
+  --shadow-md:  0 4px 16px rgb(0 0 0 / 0.35), 0 2px 6px rgb(0 0 0 / 0.2);
+  --shadow-lg:  0 10px 40px rgb(0 0 0 / 0.45), 0 4px 16px rgb(0 0 0 / 0.25);
+  --shadow-primary: 0 4px 24px -2px rgb(109 108 249 / 0.45);
+}
+
+/* ── Light mode ──────────────────────────────────────────────────────────── */
+.light {
+  --background: #f0f0f7;
+  --foreground: #0a0a12;
+  --card: #ffffff;
+  --card-foreground: #0a0a12;
+  --primary: #5856f0;
+  --primary-foreground: #ffffff;
+  --secondary: #e8e8f4;
+  --secondary-foreground: #1a1a2e;
+  --muted: #e8e8f4;
+  --muted-foreground: #6b6a88;
+  --accent: #eeeef8;
+  --accent-foreground: #0a0a12;
+  --border: rgba(0, 0, 0, 0.09);
+  --input: rgba(0, 0, 0, 0.06);
+  --ring: #5856f0;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+
+  --shadow-sm:  0 1px 3px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.05);
+  --shadow-md:  0 4px 16px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.06);
+  --shadow-lg:  0 10px 40px rgb(0 0 0 / 0.14), 0 4px 16px rgb(0 0 0 / 0.08);
+  --shadow-primary: 0 4px 24px -2px rgb(88 86 240 / 0.35);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* ── Base styles ─────────────────────────────────────────────────────────── */
+* {
+  border-color: var(--border);
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  font-feature-settings: "rlig" 1, "calt" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Custom scrollbar ────────────────────────────────────────────────────── */
+::-webkit-scrollbar          { width: 5px; height: 5px; }
+::-webkit-scrollbar-track    { background: transparent; }
+::-webkit-scrollbar-thumb    { background: var(--border); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
+
+/* ── Selection ───────────────────────────────────────────────────────────── */
+::selection { background: rgba(109, 108, 249, 0.28); }
+
+/* ── Focus ───────────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ── Smooth transitions on interactive elements ──────────────────────────── */
+button, a[href], [role="button"] {
+  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+  transition-duration: 150ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Card elevation helper ───────────────────────────────────────────────── */
+.card-elevated {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.card-elevated:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+/* ── Resize drag handles ─────────────────────────────────────────────────── */
+.resize-handle-h { cursor: col-resize; user-select: none; }
+.resize-handle-v { cursor: row-resize; user-select: none; }
+.dragging * { user-select: none !important; pointer-events: none !important; }
+
+/* ── Shimmer loading animation ───────────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, var(--secondary) 25%, var(--accent) 50%, var(--secondary) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.6s infinite;
+}
+
+/* ── Gradient text ───────────────────────────────────────────────────────── */
+.gradient-text {
+  background: linear-gradient(135deg, var(--primary), #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Glow ────────────────────────────────────────────────────────────────── */
+.glow-primary {
+  box-shadow: var(--shadow-primary);
+}
