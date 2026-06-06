@@ -11,7 +11,7 @@ node_modules/
 ates-system/node_modules/
 
 # Large video files (too big for GitHub)
-videos/
+/videos/
 ai_worker/chunks/chunk_000.mp4
 ai_worker/chunks/chunk_001.mp4
 ai_worker/chunks/chunk_002.mp4

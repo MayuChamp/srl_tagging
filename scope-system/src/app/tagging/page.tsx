@@ -33,49 +33,49 @@ const PRISMS = {
   // ── SCOPE / SRL Codebook ────────────────────────────────────────────────────
   SCOPE: [
     // TDS: Teacher Direct Strategy Instruction
-    { id: "TDS_COG",  label: "TDS_COG",  color: "#0891b2", description: "הוראת אסטרטגיה קוגניטיבית: השוואה, ייצוג, עמצים, קריאת מצין או מדד" },
-    { id: "TDS_META", label: "TDS_META", color: "#0e7490", description: "הוראת אסטרטגיה מטה-קוגניטיבית: תכנון, בדיקה, בחירת אסטרטגיה, חשיבה על תיקון" },
-    { id: "TDS_MOT",  label: "TDS_MOT",  color: "#155e75", description: "הוראת מטרות מוטיבציוניות/רגשי והמצרות ללמידה, מאמץ, התמדה או משמעות" },
+    { id: "TDS_COG",  label: "TDS_COG",  color: "#0891b2", description: "הוראת אסטרטגיה קוגניטיבית: השוואה, ייצוג, תמצות, ניתוח נתונים או מודלים" },
+    { id: "TDS_META", label: "TDS_META", color: "#0e7490", description: "הוראת אסטרטגיה מטה-קוגניטיבית: תכנון, בדיקה, בחירת אסטרטגיה, חשיבה על תהליך" },
+    { id: "TDS_MOT",  label: "TDS_MOT",  color: "#155e75", description: "הוראת אסטרטגיות ויסות מוטיבציוני/רגשי ללמידה: מאמץ, התמדה או משמעות" },
     { id: "TDS_NONE", label: "TDS_NONE", color: "#475569", description: "אין הוראת אסטרטגיה ישירה" },
     // EX: Explicitness of instruction
-    { id: "EX_IMPL",  label: "EX_IMPL",  color: "#6366f1", description: "אסטרטגיה מסויית מופעל אך לא מדגים אותה כאסטרטגיה" },
-    { id: "EX_PART",  label: "EX_PART",  color: "#7c3aed", description: "אסטרטגיה חלקית מפורשת: יש התייחסות לאסטרטגיה אך לא לאו/מה/לאן להשתמש בה" },
-    { id: "EX_EXPL",  label: "EX_EXPL",  color: "#4f46e5", description: "אסטרטגיה מפורשת: מדגים מפורשות מה, מתי, למה ואיך להשתמש באסטרטגיה" },
-    { id: "EX_NA",    label: "EX_NA",    color: "#64748b", description: "לא רלוונטי, כשאין TDS" },
+    { id: "EX_IMPL",  label: "EX_IMPL",  color: "#6366f1", description: "האסטרטגיה מופעלת אך המורה לא מדגים אותה במפורש כאסטרטגיה" },
+    { id: "EX_PART",  label: "EX_PART",  color: "#7c3aed", description: "הוראת אסטרטגיה חצי-מפורשת: יש התייחסות לאסטרטגיה, אך ללא הסבר ברור איך/מתי/למה להשתמש בה" },
+    { id: "EX_EXPL",  label: "EX_EXPL",  color: "#4f46e5", description: "הוראת אסטרטגיה מפורשת: הדגמה ברורה של מה, מתי, למה ואיך להשתמש באסטרטגיה" },
+    { id: "EX_NA",    label: "EX_NA",    color: "#64748b", description: "לא רלוונטי (כאשר אין הוראת אסטרטגיה ישירה)" },
     // SRL: SRL Process Codes
     { id: "SRL_GOAL",    label: "SRL_GOAL",    color: "#0ea5e9", description: "הצבת יעד או קריטריון להצלחה" },
-    { id: "SRL_PLAN",    label: "SRL_PLAN",    color: "#0284c7", description: "תכנון דרך פעולה או בחירת אסטרטגיה לעיבוד התכנון" },
+    { id: "SRL_PLAN",    label: "SRL_PLAN",    color: "#0284c7", description: "תכנון דרך פעולה או בחירת אסטרטגיה מתאימה" },
     { id: "SRL_COG",     label: "SRL_COG",     color: "#0369a1", description: "שימוש באסטרטגיה קוגניטיבית לעיבוד התוכן" },
-    { id: "SRL_MON",     label: "SRL_MON",     color: "#075985", description: "ניטור הבנה, דיוק, מקור החלטה אם ישנה בעיה" },
-    { id: "SRL_CTRL",    label: "SRL_CTRL",    color: "#0c4a6e", description: "התאמה הולמת של האסטרטגיה או הדרך פעלה" },
-    { id: "SRL_REFL",    label: "SRL_REFL",    color: "#164e63", description: "רפלקציה הכרתית של הלמיד, הבנות חדשות" },
-    { id: "SRL_HELP",    label: "SRL_HELP",    color: "#155e75", description: "בקשת עזרה מתוך פנייה ממוקדת לחדיה מגבלות אסטרטגיה" },
-    { id: "SRL_CONTEXT", label: "SRL_CONTEXT", color: "#312e81", description: "ויסות מצביי: שמבנים, חשיפה, אחריות ותנאים פנייתיים" },
+    { id: "SRL_MON",     label: "SRL_MON",     color: "#075985", description: "ניטור הבנה ודיוק, זיהוי בעיות וקשיים בתהליך הלמידה" },
+    { id: "SRL_CTRL",    label: "SRL_CTRL",    color: "#0c4a6e", description: "התאמה ושינוי של האסטרטגיה או דרך הפעולה בעת הצורך" },
+    { id: "SRL_REFL",    label: "SRL_REFL",    color: "#164e63", description: "רפלקציה על תהליך הלמידה, הפקת לקחים והבנות חדשות" },
+    { id: "SRL_HELP",    label: "SRL_HELP",    color: "#155e75", description: "בקשת עזרה ממוקדת מתוך מודעות למגבלות האסטרטגיה או הידע" },
+    { id: "SRL_CONTEXT", label: "SRL_CONTEXT", color: "#312e81", description: "ויסות הקשרי/סביבתי: ניהול זמן, ארגון סביבת הלמידה ותנאים פיזיים" },
     // ST: Student SRL Uptake
-    { id: "ST_PLAN",  label: "ST_PLAN",  color: "#9333ea", description: "למידיות מתכנמות או מחדרים דרך פעולה" },
-    { id: "ST_MON",   label: "ST_MON",   color: "#7e22ce", description: "למידיות בודקים, מזהים בעיות ומנמקים מקור ההחלטה" },
-    { id: "ST_HELP",  label: "ST_HELP",  color: "#a855f7", description: "למידיות מבקשים עזרה ממוקדת" },
+    { id: "ST_PLAN",  label: "ST_PLAN",  color: "#9333ea", description: "התלמידים מתכננים או מגדירים דרך פעולה" },
+    { id: "ST_MON",   label: "ST_MON",   color: "#7e22ce", description: "התלמידים מנטרים את הבנתם, מזהים בעיות ומנמקים החלטות" },
+    { id: "ST_HELP",  label: "ST_HELP",  color: "#a855f7", description: "התלמידים מבקשים עזרה ממוקדת ויעילה" },
     // SCI: Science-Specific SRL
-    { id: "SCI_DATA",     label: "SCI_DATA",     color: "#92400e", description: "אסטרטגיית ניתוח נתונים, סיפונים, מגמות, ייצוגים" },
-    { id: "SCI_TRANSFER", label: "SCI_TRANSFER", color: "#6ee7b7", description: "העברה, הכללה, חיבור לתחומים מדעיים/טכנולוגיים" },
-    { id: "SCI_ARG",      label: "SCI_ARG",      color: "#ea580c", description: "הצגה, הוכחה, ביסוס, שיפוטים מדעיים" },
+    { id: "SCI_DATA",     label: "SCI_DATA",     color: "#92400e", description: "אסטרטגיית ניתוח נתונים, סיווגים, זיהוי מגמות ושימוש בייצוגים מדעיים" },
+    { id: "SCI_TRANSFER", label: "SCI_TRANSFER", color: "#6ee7b7", description: "העברת ידע, הכללה ויצירת הקשרים לתחומים מדעיים וטכנולוגיים" },
+    { id: "SCI_ARG",      label: "SCI_ARG",      color: "#ea580c", description: "טיעון מדעי: הצגת טענה, ביסוס, הוכחה ושיפוט מדעי" },
     // TA: Teacher Adaptation
-    { id: "TA0", label: "TA0", color: "#94a3b8", description: "ללא הסתגלות התראה SRL" },
-    { id: "TA1", label: "TA1", color: "#f87171", description: "הסתגלות מוגבלת (תוכן בלבד)" },
-    { id: "TA2", label: "TA2", color: "#fb923c", description: "הסתגלות הוראתית ברורה" },
-    { id: "TA3", label: "TA3", color: "#4ade80", description: "הסתגלות מוכוונת SRL" },
+    { id: "TA0", label: "TA0", color: "#94a3b8", description: "ללא התאמת ההוראה (ללא תמיכה ב-SRL)" },
+    { id: "TA1", label: "TA1", color: "#f87171", description: "התאמת הוראה מוגבלת (התמקדות בתוכן בלבד)" },
+    { id: "TA2", label: "TA2", color: "#fb923c", description: "התאמת הוראה ברורה ומפורשת" },
+    { id: "TA3", label: "TA3", color: "#4ade80", description: "התאמת הוראה מוכוונת לתמיכה בוויסות הלמידה (SRL)" },
     // MO: Missed Opportunity
-    { id: "MO_EXPL",   label: "MO_EXPL",   color: "#ef4444", description: "הדגמות מחמיצות להרחיב אחות אסטרטגיה" },
-    { id: "MO_MON",    label: "MO_MON",    color: "#f97316", description: "הדגמות מחמיצות לניטור עצמי או בדיקת הבנה" },
-    { id: "MO_EVID",   label: "MO_EVID",   color: "#eab308", description: "הדגמות מחמיצות לבקש ראייה, הצדקה או הוכחה" },
-    { id: "MO_REFL",   label: "MO_REFL",   color: "#a78bfa", description: "הדגמות מחמיצות לרפלקציה אחות קצות אסטרטגיה" },
-    { id: "MO_AGENCY", label: "MO_AGENCY", color: "#ec4899", description: "הדגמות מחמיצות לאחריות/בחירה של הלמידים" },
-    { id: "MO_HELP",   label: "MO_HELP",   color: "#f43f5e", description: "הדגמות מחמיצות ללמד בקשת עזרה אסטרטגית" },
+    { id: "MO_EXPL",   label: "MO_EXPL",   color: "#ef4444", description: "החמצת הזדמנות: הרחבה והסבר מפורש של האסטרטגיה" },
+    { id: "MO_MON",    label: "MO_MON",    color: "#f97316", description: "החמצת הזדמנות: עידוד התלמידים לניטור עצמי או בדיקת הבנה" },
+    { id: "MO_EVID",   label: "MO_EVID",   color: "#eab308", description: "החמצת הזדמנות: בקשת ראיות, הצדקות או הוכחות מהתלמידים" },
+    { id: "MO_REFL",   label: "MO_REFL",   color: "#a78bfa", description: "החמצת הזדמנות: עידוד רפלקציה על התהליך או האסטרטגיה" },
+    { id: "MO_AGENCY", label: "MO_AGENCY", color: "#ec4899", description: "החמצת הזדמנות: מתן אחריות, בחירה או אוטונומיה לתלמידים" },
+    { id: "MO_HELP",   label: "MO_HELP",   color: "#f43f5e", description: "החמצת הזדמנות: הנחיה או תמיכה בבקשת עזרה יעילה" },
     // Q: Episode Quality
-    { id: "Q0", label: "Q0", color: "#94a3b8", description: "אירות רמת SRL: לא SRL" },
-    { id: "Q1", label: "Q1", color: "#fca5a5", description: "אירות רמת SRL: נמוך" },
-    { id: "Q2", label: "Q2", color: "#fcd34d", description: "אירות רמת SRL: בינוני" },
-    { id: "Q3", label: "Q3", color: "#86efac", description: "אירות רמת SRL: גבוה" },
+    { id: "Q0", label: "Q0", color: "#94a3b8", description: "איכות ויסות הלמידה: לא נצפה SRL" },
+    { id: "Q1", label: "Q1", color: "#fca5a5", description: "איכות ויסות הלמידה: נמוכה" },
+    { id: "Q2", label: "Q2", color: "#fcd34d", description: "איכות ויסות הלמידה: בינונית" },
+    { id: "Q3", label: "Q3", color: "#86efac", description: "איכות ויסות הלמידה: גבוהה" },
     // EV: Evidence Strength
     { id: "EV0", label: "EV0", color: "#94a3b8", description: "עוצמת העדות: אין" },
     { id: "EV1", label: "EV1", color: "#fca5a5", description: "עוצמת העדות: חלש" },
@@ -810,11 +810,11 @@ function TaggingModeInner() {
           className="fixed z-[999] pointer-events-none"
           style={{ left: tooltip.x, top: tooltip.y, transform: "translate(-50%, -100%)" }}
         >
-          <div className="bg-popover border border-border rounded-lg px-3 py-2 shadow-xl w-56 text-xs" dir="rtl">
-            <p className="font-semibold text-primary mb-0.5 text-left" dir="ltr">{tooltip.id}</p>
-            <p className="text-muted-foreground leading-relaxed">{tooltip.description}</p>
+          <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-xl px-4 py-3 shadow-2xl w-64 text-sm" dir="rtl">
+            <p className="font-bold text-slate-100 mb-1 text-left" dir="ltr">{tooltip.id}</p>
+            <p className="text-slate-300 leading-relaxed">{tooltip.description}</p>
           </div>
-          <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-border" />
+          <div className="absolute top-full left-1/2 -translate-x-1/2 border-[6px] border-transparent border-t-slate-900/95" />
         </div>
       )}
 
