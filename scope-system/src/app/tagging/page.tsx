@@ -8,6 +8,7 @@ import {
   FolderOpen, Info, Download, Upload, Trash2, Library, X, Video,
   Search, RotateCcw, ChevronDown, PlayCircle, Captions, FileSpreadsheet,
   Pencil, Check, Play, Bot, Sparkles, CheckCheck, Mic, FileText,
+  SkipBack, SkipForward,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase/client";
@@ -542,7 +543,12 @@ function TaggingModeInner() {
       evidence: evidenceText,
       confidence: confidenceScore,
     };
-    setMarkers(prev => [...prev, newMarker]);
+    setMarkers(prev => {
+      const newMarkers = [...prev, newMarker];
+      // Auto-save when a new tag is made
+      setTimeout(() => handleSaveSessionToSupabase(newMarkers), 0);
+      return newMarkers;
+    });
     setStartTime("");
     setEndTime("");
     setEvidenceText("");
@@ -550,8 +556,9 @@ function TaggingModeInner() {
     setSelectedCodes(new Set());
   };
 
-  const handleSaveSessionToSupabase = async () => {
-    if (markers.length === 0) return alert("No tags to save in this session.");
+  const handleSaveSessionToSupabase = async (overrideMarkers?: VideoMarker[]) => {
+    const markersToSave = overrideMarkers || markers;
+    if (markersToSave.length === 0) return alert("No tags to save in this session.");
     setIsSavingSession(true);
     try {
       const name = sessionName.trim() || `session_${new Date().toISOString().slice(0, 10)}`;
@@ -582,7 +589,7 @@ function TaggingModeInner() {
         setResumedSessionId(analysisId);
       }
 
-      const tagRows = markers.flatMap(m =>
+      const tagRows = markersToSave.flatMap(m =>
         (m.labels ?? [m.label]).map(codeId => ({
           analysis_id: analysisId,
           code_id: codeId,

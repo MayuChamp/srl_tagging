@@ -277,10 +277,12 @@ export function VideoPlayer({ url, markers = [], onTimeUpdate, captions = [], se
             <button onClick={togglePlay} className="hover:text-primary transition-colors">
               {isPlaying ? <Pause size={24} /> : <Play size={24} fill="currentColor" />}
             </button>
-            <button onClick={() => skip(-10)} className="hover:text-primary transition-colors">
+            <button onClick={() => skip(-10)} className="hover:text-primary transition-colors flex items-center gap-1 text-xs font-medium">
               <SkipBack size={20} />
+              <span>-10s</span>
             </button>
-            <button onClick={() => skip(10)} className="hover:text-primary transition-colors">
+            <button onClick={() => skip(10)} className="hover:text-primary transition-colors flex items-center gap-1 text-xs font-medium">
+              <span>+10s</span>
               <SkipForward size={20} />
             </button>
             <div className="flex items-center gap-2">
