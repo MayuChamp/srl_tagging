@@ -926,7 +926,7 @@ function TaggingModeInner() {
               className="flex items-center gap-1.5 bg-secondary text-secondary-foreground px-3 py-1.5 rounded-md hover:bg-secondary/80 transition-colors text-sm">
               <Upload size={13} /> Load
             </button>
-            <button onClick={handleSaveSessionToSupabase} disabled={isSavingSession || markers.length === 0}
+            <button onClick={() => handleSaveSessionToSupabase()} disabled={isSavingSession || markers.length === 0}
               title="Save session to library"
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                 sessionSaved ? "bg-green-600 text-white" : "bg-primary text-primary-foreground hover:bg-primary/90"
