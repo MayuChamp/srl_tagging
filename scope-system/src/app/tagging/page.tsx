@@ -31,6 +31,17 @@ interface AiTag {
   confidence_score: number | null;
 }
 
+interface AiEvent {
+  key: string;
+  ids: string[];
+  code_ids: string[];
+  start_time: number;
+  end_time: number;
+  evidence_text: string | null;
+  reasoning: string | null;
+  confidence_score: number | null;
+}
+
 const PRISMS = {
   // ── SCOPE / SRL Codebook ────────────────────────────────────────────────────
   SCOPE: [
@@ -201,7 +212,31 @@ function TaggingModeInner() {
   const [rightTab, setRightTab] = useState<RightTab>("SCOPE");
   const [aiStatus, setAiStatus] = useState<"idle" | "processing" | "completed" | "failed">("idle");
   const [aiTags, setAiTags] = useState<AiTag[]>([]);
-  const [acceptedAiIds, setAcceptedAiIds] = useState<Set<string>>(() => new Set());
+  const [acceptedAiKeys, setAcceptedAiKeys] = useState<Set<string>>(() => new Set());
+
+  // Group flat tag rows into events (one card per timestamp)
+  const aiEvents = useMemo<AiEvent[]>(() => {
+    const map = new Map<string, AiEvent>();
+    for (const tag of aiTags) {
+      const key = `${tag.start_time}|${tag.end_time}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          ids: [],
+          code_ids: [],
+          start_time: tag.start_time,
+          end_time: tag.end_time,
+          evidence_text: tag.evidence_text,
+          reasoning: tag.reasoning,
+          confidence_score: tag.confidence_score,
+        });
+      }
+      const ev = map.get(key)!;
+      ev.ids.push(tag.id);
+      ev.code_ids.push(tag.code_id);
+    }
+    return [...map.values()];
+  }, [aiTags]);
   const [processingStartedAt, setProcessingStartedAt] = useState<number | null>(null);
 
   const seekToTime = (time: number) => {
@@ -213,7 +248,7 @@ function TaggingModeInner() {
     if (!loadedVideoId) {
       setAiStatus("idle");
       setAiTags([]);
-      setAcceptedAiIds(new Set());
+      setAcceptedAiKeys(new Set());
       setAudioTranscript(null);
       return;
     }
@@ -256,7 +291,7 @@ function TaggingModeInner() {
     if (!loadedVideoId) return;
     setAiStatus("processing");
     setAiTags([]);
-    setAcceptedAiIds(new Set());
+    setAcceptedAiKeys(new Set());
     setProcessingStartedAt(Date.now());
     try {
       const res = await fetch("/api/analyze", {
@@ -279,39 +314,39 @@ function TaggingModeInner() {
     setProcessingStartedAt(null);
   };
 
-  const handleAcceptAiTag = (tag: AiTag) => {
+  const handleAcceptAiEvent = (event: AiEvent) => {
     const newMarker: VideoMarker = {
       id: crypto.randomUUID(),
-      startTime: tag.start_time,
-      endTime: tag.end_time,
-      label: tag.code_id,
-      labels: [tag.code_id],
-      color: CODE_COLORS[tag.code_id] ?? "#6366f1",
-      colors: [CODE_COLORS[tag.code_id] ?? "#6366f1"],
-      evidence: tag.evidence_text ?? undefined,
-      reasoning: tag.reasoning ?? undefined,
-      confidence: tag.confidence_score ?? undefined,
+      startTime: event.start_time,
+      endTime: event.end_time,
+      label: event.code_ids[0],
+      labels: event.code_ids,
+      color: CODE_COLORS[event.code_ids[0]] ?? "#6366f1",
+      colors: event.code_ids.map(id => CODE_COLORS[id] ?? "#6366f1"),
+      evidence: event.evidence_text ?? undefined,
+      reasoning: event.reasoning ?? undefined,
+      confidence: event.confidence_score ?? undefined,
     };
     setMarkers(prev => [...prev, newMarker]);
-    setAcceptedAiIds(prev => new Set([...prev, tag.id]));
+    setAcceptedAiKeys(prev => new Set([...prev, event.key]));
   };
 
-  const handleAcceptAllAiTags = () => {
-    const pending = aiTags.filter(t => !acceptedAiIds.has(t.id));
-    const newMarkers: VideoMarker[] = pending.map(tag => ({
+  const handleAcceptAllAiEvents = () => {
+    const pending = aiEvents.filter(e => !acceptedAiKeys.has(e.key));
+    const newMarkers: VideoMarker[] = pending.map(event => ({
       id: crypto.randomUUID(),
-      startTime: tag.start_time,
-      endTime: tag.end_time,
-      label: tag.code_id,
-      labels: [tag.code_id],
-      color: CODE_COLORS[tag.code_id] ?? "#6366f1",
-      colors: [CODE_COLORS[tag.code_id] ?? "#6366f1"],
-      evidence: tag.evidence_text ?? undefined,
-      reasoning: tag.reasoning ?? undefined,
-      confidence: tag.confidence_score ?? undefined,
+      startTime: event.start_time,
+      endTime: event.end_time,
+      label: event.code_ids[0],
+      labels: event.code_ids,
+      color: CODE_COLORS[event.code_ids[0]] ?? "#6366f1",
+      colors: event.code_ids.map(id => CODE_COLORS[id] ?? "#6366f1"),
+      evidence: event.evidence_text ?? undefined,
+      reasoning: event.reasoning ?? undefined,
+      confidence: event.confidence_score ?? undefined,
     }));
     setMarkers(prev => [...prev, ...newMarkers]);
-    setAcceptedAiIds(prev => new Set([...prev, ...pending.map(t => t.id)]));
+    setAcceptedAiKeys(prev => new Set([...prev, ...pending.map(e => e.key)]));
   };
 
   const handleEditStart = (m: VideoMarker) => {
@@ -1281,9 +1316,9 @@ function TaggingModeInner() {
               {aiStatus === "processing" && (
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
               )}
-              {aiStatus === "completed" && aiTags.length > 0 && (
+              {aiStatus === "completed" && aiEvents.length > 0 && (
                 <span className="text-[10px] bg-primary/15 text-primary rounded-full px-1.5 py-0.5 font-bold leading-none">
-                  {aiTags.length}
+                  {aiEvents.length}
                 </span>
               )}
             </button>
@@ -1400,16 +1435,16 @@ function TaggingModeInner() {
               </div>
             )}
 
-            {/* Completed — show AI tags */}
-            {aiStatus === "completed" && aiTags.length > 0 && (
+            {/* Completed — show AI events (grouped by timestamp) */}
+            {aiStatus === "completed" && aiEvents.length > 0 && (
               <div className="flex flex-col h-full">
                 {/* Header */}
                 <div className="px-4 py-2.5 border-b border-border flex items-center justify-between shrink-0">
                   <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
                     <Sparkles size={11} className="text-primary" />
-                    {aiTags.length} הצעות AI
-                    {acceptedAiIds.size > 0 && (
-                      <span className="text-primary">· {acceptedAiIds.size} אושרו</span>
+                    {aiEvents.length} אירועי AI
+                    {acceptedAiKeys.size > 0 && (
+                      <span className="text-primary">· {acceptedAiKeys.size} אושרו</span>
                     )}
                   </span>
                   <div className="flex items-center gap-2">
@@ -1417,8 +1452,8 @@ function TaggingModeInner() {
                       className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
                       הרץ שוב
                     </button>
-                    {aiTags.some(t => !acceptedAiIds.has(t.id)) && (
-                      <button onClick={handleAcceptAllAiTags}
+                    {aiEvents.some(e => !acceptedAiKeys.has(e.key)) && (
+                      <button onClick={handleAcceptAllAiEvents}
                         className="flex items-center gap-1 text-[10px] bg-primary/10 text-primary hover:bg-primary/20 px-2 py-1 rounded transition-colors font-medium">
                         <CheckCheck size={10} /> קבל הכל
                       </button>
@@ -1426,16 +1461,15 @@ function TaggingModeInner() {
                   </div>
                 </div>
 
-                {/* Tag list */}
+                {/* Event list */}
                 <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-                  {aiTags.map(tag => {
-                    const codeColor = CODE_COLORS[tag.code_id] ?? "#6366f1";
-                    const accepted = acceptedAiIds.has(tag.id);
-                    const isProsodic = tag.evidence_text?.startsWith("[PROSODIC]");
+                  {aiEvents.map(event => {
+                    const accepted = acceptedAiKeys.has(event.key);
+                    const isProsodic = event.evidence_text?.startsWith("[PROSODIC]");
                     const evidence = isProsodic
-                      ? tag.evidence_text?.replace("[PROSODIC]", "").trim()
-                      : tag.evidence_text;
-                    const conf = tag.confidence_score ?? 0;
+                      ? event.evidence_text?.replace("[PROSODIC]", "").trim()
+                      : event.evidence_text;
+                    const conf = event.confidence_score ?? 0;
                     const confLabel = conf >= 0.8 ? "חזק" : conf >= 0.5 ? "בינוני" : "חלש";
                     const confCls = conf >= 0.8
                       ? "text-emerald-400 border-emerald-400/30"
@@ -1445,69 +1479,73 @@ function TaggingModeInner() {
 
                     return (
                       <div
-                        key={tag.id}
-                        onClick={() => seekToTime(tag.start_time)}
+                        key={event.key}
+                        onClick={() => seekToTime(event.start_time)}
                         className={`rounded-lg border transition-all cursor-pointer ${
                           accepted
                             ? "border-primary/20 bg-primary/5 opacity-60"
                             : "border-border hover:border-primary/30 hover:bg-secondary/30"
                         }`}
                       >
-                        <div className="flex items-center gap-2 px-2.5 py-2">
-                          {/* Code dot + label */}
-                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: codeColor }} />
-                          <span className="text-xs font-bold" style={{ color: codeColor }}>{tag.code_id}</span>
+                        <div className="flex items-start gap-2 px-2.5 py-2">
+                          {/* Code chips */}
+                          <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+                            {event.code_ids.map((codeId, i) => {
+                              const c = CODE_COLORS[codeId] ?? "#6366f1";
+                              return (
+                                <span key={`${codeId}-${i}`}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border"
+                                  style={{ borderColor: c + "50", backgroundColor: c + "18", color: c }}>
+                                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: c }} />
+                                  {codeId}
+                                </span>
+                              );
+                            })}
+                          </div>
 
-                          {/* Badges */}
-                          <div className="flex items-center gap-1 ml-0.5">
+                          <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
                             <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-semibold leading-none">AI</span>
                             {isProsodic && (
                               <span className="text-[9px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-400 font-semibold leading-none flex items-center gap-0.5">
                                 <Mic size={7} /> פרוסודי
                               </span>
                             )}
-                          </div>
-
-                          <div className="ml-auto flex items-center gap-2">
-                            {/* Confidence */}
                             <span className={`text-[9px] px-1.5 py-0.5 rounded border ${confCls} leading-none`}>
                               {confLabel} {Math.round(conf * 100)}%
                             </span>
-                            {/* Time */}
                             <span className="text-[10px] font-mono text-muted-foreground bg-background px-1.5 py-0.5 rounded">
-                              {formatTime(tag.start_time)}
+                              {formatTime(event.start_time)}
                             </span>
                           </div>
                         </div>
 
                         {/* Evidence + reasoning */}
-                        {(evidence || tag.reasoning) && (
+                        {(evidence || event.reasoning) && (
                           <div className="px-2.5 pb-1 space-y-1">
                             {evidence && (
                               <p className="text-[10px] text-muted-foreground leading-relaxed line-clamp-2" dir="rtl">
                                 {evidence}
                               </p>
                             )}
-                            {tag.reasoning && (
-                              <p className="text-[10px] text-foreground/40 italic leading-relaxed line-clamp-2 border-t border-border/20 pt-1" dir="rtl">
-                                <span className="not-italic font-medium text-muted-foreground/50">נימוק: </span>{tag.reasoning}
+                            {event.reasoning && (
+                              <p className="text-[10px] text-foreground/40 italic leading-relaxed line-clamp-3 border-t border-border/20 pt-1" dir="rtl">
+                                <span className="not-italic font-medium text-muted-foreground/50">נימוק: </span>{event.reasoning}
                               </p>
                             )}
                           </div>
                         )}
 
                         {/* Accept button */}
-                        {!accepted && (
+                        {!accepted ? (
                           <div className="px-2.5 pb-2">
                             <button
-                              onClick={e => { e.stopPropagation(); handleAcceptAiTag(tag); }}
+                              onClick={e => { e.stopPropagation(); handleAcceptAiEvent(event); }}
                               className="flex items-center gap-1 text-[10px] bg-primary/10 hover:bg-primary/20 text-primary px-2.5 py-1 rounded transition-colors font-medium w-full justify-center"
                             >
-                              <Check size={10} /> קבל תגית
+                              <Check size={10} /> קבל אירוע
                             </button>
                           </div>
-                        )}
-                        {accepted && (
+                        ) : (
                           <div className="px-2.5 pb-2 flex items-center gap-1 text-[10px] text-primary/60">
                             <Check size={10} /> נוסף לסשן
                           </div>
@@ -1519,7 +1557,7 @@ function TaggingModeInner() {
               </div>
             )}
 
-            {aiStatus === "completed" && aiTags.length === 0 && (
+            {aiStatus === "completed" && aiEvents.length === 0 && (
               <div className="flex-1 flex flex-col items-center justify-center text-center p-6 gap-3">
                 <p className="text-sm font-semibold">לא זוהו אירועי SRL</p>
                 <p className="text-xs text-muted-foreground">נסה שוב עם סרטון אחר.</p>

@@ -530,29 +530,47 @@ def process_single_video(local_path, video_title, video_id=None):
         supabase.table("tags").delete().eq("analysis_id", analysis_res.data[0]["id"]).execute()
     
     analysis_id = analysis_res.data[0]['id']
-    
+
+    def ensure_analysis_exists(vid_id, a_id):
+        """Returns valid analysis_id, recreating the row if it was deleted by the UI."""
+        check = supabase.table("analyses").select("id").eq("id", a_id).execute()
+        if check.data:
+            return a_id
+        print(f"WARNING: analysis {a_id} was deleted externally — recreating.")
+        new_res = supabase.table("analyses").insert({
+            "video_id": vid_id,
+            "is_ai_generated": True
+        }).execute()
+        if not new_res.data:
+            raise RuntimeError("Failed to recreate analysis session after external deletion.")
+        return new_res.data[0]["id"]
+
     chunk_dir = os.path.join(OUTPUT_DIR, f"temp_{video_id}")
     try:
         os.makedirs(chunk_dir, exist_ok=True)
         # Split video into 5-minute chunks internally to avoid timeout/OOM issues on Gemini API
         split_video(path_to_process, chunk_dir, chunk_duration=300)
-        
+
         chunk_files = sorted(glob.glob(f"{chunk_dir}/chunk_*.mp4"))
         print(f"Video internally split into {len(chunk_files)} chunks for safe API processing.")
-        
-        all_rows = []
+
+        total_rows = 0
         all_rich_entries = []
-        
+
         for idx, chunk_file in enumerate(chunk_files):
             print(f"Analyzing internal chunk {idx+1}/{len(chunk_files)}...")
             offset = idx * 300
             events, rich_entries = analyze_video_with_gemini(chunk_file)
-            
+
+            # Verify analysis row still exists before inserting (handles UI re-analyze race)
+            analysis_id = ensure_analysis_exists(video_id, analysis_id)
+
+            chunk_rows = []
             for event in events:
                 start_t = event.get("start_time", 0) + offset
                 end_t = event.get("end_time", 0) + offset
                 for code_id in event.get("code_ids", []):
-                    all_rows.append({
+                    chunk_rows.append({
                         "analysis_id": analysis_id,
                         "code_id": code_id,
                         "start_time": start_t,
@@ -561,30 +579,31 @@ def process_single_video(local_path, video_title, video_id=None):
                         "reasoning": event.get("reasoning"),
                         "confidence_score": event.get("confidence_score")
                     })
-            
+
+            if chunk_rows:
+                for i in range(0, len(chunk_rows), 100):
+                    supabase.table("tags").insert(chunk_rows[i:i+100]).execute()
+                total_rows += len(chunk_rows)
+                print(f"Chunk {idx+1}: inserted {len(chunk_rows)} tag rows ({total_rows} total so far).")
+
             for entry in rich_entries:
                 if "start" in entry: entry["start"] += offset
                 if "end" in entry: entry["end"] += offset
                 all_rich_entries.append(entry)
-                
+
             # Free up space locally
             try:
                 os.remove(chunk_file)
             except OSError:
                 pass
-                
-        if all_rows:
-            # Batch inserts to avoid large payload errors
-            for i in range(0, len(all_rows), 100):
-                supabase.table("tags").insert(all_rows[i:i+100]).execute()
-        
+
         if all_rich_entries:
             supabase.table("analyses").update({
                 "summary_metrics": {"audio_transcript": all_rich_entries}
             }).eq("id", analysis_id).execute()
-            
+
         supabase.table("videos").update({"status": "completed"}).eq("id", video_id).execute()
-        print(f"Video '{video_title}' analysis COMPLETED ({len(all_rows)} tag rows total).")
+        print(f"Video '{video_title}' analysis COMPLETED ({total_rows} tag rows total).")
         
     except Exception as e:
         import traceback
