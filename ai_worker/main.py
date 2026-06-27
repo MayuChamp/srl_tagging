@@ -29,7 +29,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY, options=opts)
 
 # Gemini init
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-gemini_client = genai.Client(api_key=GEMINI_API_KEY, http_options={"timeout": 600.0})
+gemini_client = genai.Client(api_key=GEMINI_API_KEY, http_options={"timeout": 600_000})  # 600s in ms
 GEMINI_MODEL = "gemini-2.5-flash"
 
 VIDEO_PATH = os.getenv("VIDEO_PATH", "/Users/yearadany/srl ai tagging/videos/סרטון של המורה פז.mov")

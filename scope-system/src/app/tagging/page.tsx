@@ -161,6 +161,8 @@ function TaggingModeInner() {
   const [selectedPrism, setSelectedPrism] = useState<PrismKey>("SCOPE");
   const [startTime, setStartTime] = useState<number | "">("");
   const [endTime, setEndTime] = useState<number | "">("");
+  const [startTimeText, setStartTimeText] = useState("");
+  const [endTimeText, setEndTimeText] = useState("");
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(() => new Set());
   const [evidenceText, setEvidenceText] = useState("");
   const [reasoningText, setReasoningText] = useState("");
@@ -474,6 +476,20 @@ function TaggingModeInner() {
     return `${m}:${s < 10 ? "0" : ""}${s}`;
   };
 
+  const parseTimeString = (val: string): number | "" => {
+    const trimmed = val.trim();
+    if (!trimmed) return "";
+    if (trimmed.includes(":")) {
+      const parts = trimmed.split(":").map(Number);
+      if (parts.some((p) => isNaN(p) || p < 0)) return "";
+      if (parts.length === 2) return parts[0] * 60 + parts[1];
+      if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+      return "";
+    }
+    const n = Number(trimmed);
+    return isNaN(n) ? "" : Math.round(n);
+  };
+
   const handleLoadUrl = () => {
     const trimmed = videoInputUrl.trim();
     if (!trimmed) return;
@@ -559,6 +575,8 @@ function TaggingModeInner() {
     });
     setStartTime("");
     setEndTime("");
+    setStartTimeText("");
+    setEndTimeText("");
     setEvidenceText("");
     setReasoningText("");
     setConfidenceScore(0.66);
@@ -1592,21 +1610,39 @@ function TaggingModeInner() {
               {isEmbedMode ? (
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary/30 rounded px-2 py-1.5">
-                    <Info size={11} className="shrink-0" /> Enter timestamps manually (seconds)
+                    <Info size={11} className="shrink-0" /> הכנס זמן בפורמט <span className="font-mono mx-0.5">דק:שנ</span> — לדוגמה <span className="font-mono mx-0.5">1:30</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <input type="number" min={0} step={1}
-                      value={startTime === "" ? "" : startTime}
-                      onChange={(e) => setStartTime(e.target.value === "" ? "" : Number(e.target.value))}
-                      placeholder="Start (s)"
-                      className="flex-1 bg-background border border-border rounded-md px-3 py-1.5 font-mono text-sm focus:outline-none focus:border-primary"
+                    <input
+                      type="text"
+                      value={startTimeText}
+                      onChange={(e) => {
+                        setStartTimeText(e.target.value);
+                        const parsed = parseTimeString(e.target.value);
+                        if (parsed !== "") setStartTime(parsed);
+                        else if (e.target.value === "") setStartTime("");
+                      }}
+                      onBlur={() => {
+                        if (startTime !== "") setStartTimeText(formatTime(startTime as number));
+                      }}
+                      placeholder="0:00"
+                      className="flex-1 bg-background border border-border rounded-md px-3 py-1.5 font-mono text-sm focus:outline-none focus:border-primary text-center"
                     />
                     <span className="text-muted-foreground text-xs">–</span>
-                    <input type="number" min={0} step={1}
-                      value={endTime === "" ? "" : endTime}
-                      onChange={(e) => setEndTime(e.target.value === "" ? "" : Number(e.target.value))}
-                      placeholder="End (s)"
-                      className="flex-1 bg-background border border-border rounded-md px-3 py-1.5 font-mono text-sm focus:outline-none focus:border-primary"
+                    <input
+                      type="text"
+                      value={endTimeText}
+                      onChange={(e) => {
+                        setEndTimeText(e.target.value);
+                        const parsed = parseTimeString(e.target.value);
+                        if (parsed !== "") setEndTime(parsed);
+                        else if (e.target.value === "") setEndTime("");
+                      }}
+                      onBlur={() => {
+                        if (endTime !== "") setEndTimeText(formatTime(endTime as number));
+                      }}
+                      placeholder="0:00"
+                      className="flex-1 bg-background border border-border rounded-md px-3 py-1.5 font-mono text-sm focus:outline-none focus:border-primary text-center"
                     />
                   </div>
                 </div>
