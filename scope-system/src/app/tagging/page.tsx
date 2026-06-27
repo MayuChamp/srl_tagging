@@ -27,6 +27,7 @@ interface AiTag {
   start_time: number;
   end_time: number;
   evidence_text: string | null;
+  reasoning: string | null;
   confidence_score: number | null;
 }
 
@@ -162,6 +163,7 @@ function TaggingModeInner() {
   const [endTime, setEndTime] = useState<number | "">("");
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(() => new Set());
   const [evidenceText, setEvidenceText] = useState("");
+  const [reasoningText, setReasoningText] = useState("");
   const [confidenceScore, setConfidenceScore] = useState<number>(0.66);
 
   // Code browser state
@@ -180,7 +182,7 @@ function TaggingModeInner() {
 
   // Tag editing state
   const [editingMarkerId, setEditingMarkerId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<{ startTime: number | ""; endTime: number | ""; evidence: string } | null>(null);
+  const [editForm, setEditForm] = useState<{ startTime: number | ""; endTime: number | ""; evidence: string; reasoning: string } | null>(null);
 
   // Video seek state
   const [seekRequest, setSeekRequest] = useState<{ time: number; seq: number } | null>(null);
@@ -285,6 +287,7 @@ function TaggingModeInner() {
       color: CODE_COLORS[tag.code_id] ?? "#6366f1",
       colors: [CODE_COLORS[tag.code_id] ?? "#6366f1"],
       evidence: tag.evidence_text ?? undefined,
+      reasoning: tag.reasoning ?? undefined,
       confidence: tag.confidence_score ?? undefined,
     };
     setMarkers(prev => [...prev, newMarker]);
@@ -302,6 +305,7 @@ function TaggingModeInner() {
       color: CODE_COLORS[tag.code_id] ?? "#6366f1",
       colors: [CODE_COLORS[tag.code_id] ?? "#6366f1"],
       evidence: tag.evidence_text ?? undefined,
+      reasoning: tag.reasoning ?? undefined,
       confidence: tag.confidence_score ?? undefined,
     }));
     setMarkers(prev => [...prev, ...newMarkers]);
@@ -314,6 +318,7 @@ function TaggingModeInner() {
       startTime: m.startTime,
       endTime: m.endTime ?? m.startTime,
       evidence: m.evidence ?? "",
+      reasoning: m.reasoning ?? "",
     });
   };
 
@@ -324,6 +329,7 @@ function TaggingModeInner() {
       startTime: Number(editForm.startTime),
       endTime: Number(editForm.endTime),
       evidence: editForm.evidence,
+      reasoning: editForm.reasoning || undefined,
     }));
     setEditingMarkerId(null);
     setEditForm(null);
@@ -386,7 +392,7 @@ function TaggingModeInner() {
 
       const { data: tagData } = await supabase
         .from("tags")
-        .select("id, code_id, start_time, end_time, evidence_text, confidence_score, created_at")
+        .select("id, code_id, start_time, end_time, evidence_text, reasoning, confidence_score, created_at")
         .eq("analysis_id", sessionId)
         .order("start_time", { ascending: true })
         .order("created_at", { ascending: true });
@@ -394,7 +400,7 @@ function TaggingModeInner() {
       // Group rows belonging to the same multi-code event. Rows from the same event were
       // inserted consecutively and share identical time+evidence, so we use a run-length
       // approach: a new group starts whenever the key changes from the previous row.
-      type TagRow = { id: string; code_id: string; start_time: number; end_time: number; evidence_text: string | null; confidence_score: number | null; created_at: string | null };
+      type TagRow = { id: string; code_id: string; start_time: number; end_time: number; evidence_text: string | null; reasoning: string | null; confidence_score: number | null; created_at: string | null };
       const grouped = new Map<string, TagRow[]>();
       let prevKey = "";
       let groupSeq = 0;
@@ -408,7 +414,7 @@ function TaggingModeInner() {
       }
       const restoredMarkers: VideoMarker[] = [...grouped.values()].map(group => {
         const first = group[0];
-        const codes = group.map(t => t.code_id);
+        const codes = Array.from(new Set(group.map(t => t.code_id)));
         return {
           id: first.id,
           startTime: first.start_time,
@@ -418,6 +424,7 @@ function TaggingModeInner() {
           labels: codes,
           colors: codes.map(id => CODE_COLORS[id] ?? "#6b7280"),
           evidence: first.evidence_text ?? undefined,
+          reasoning: first.reasoning ?? undefined,
           confidence: first.confidence_score ?? undefined,
         };
       });
@@ -541,6 +548,7 @@ function TaggingModeInner() {
       labels: codes,
       colors: codes.map(id => PRISM_CODE_LOOKUP[id]?.color || "#6b7280"),
       evidence: evidenceText,
+      reasoning: reasoningText || undefined,
       confidence: confidenceScore,
     };
     setMarkers(prev => {
@@ -552,6 +560,7 @@ function TaggingModeInner() {
     setStartTime("");
     setEndTime("");
     setEvidenceText("");
+    setReasoningText("");
     setConfidenceScore(0.66);
     setSelectedCodes(new Set());
   };
@@ -596,6 +605,7 @@ function TaggingModeInner() {
           start_time: m.startTime,
           end_time: m.endTime ?? m.startTime,
           evidence_text: m.evidence || null,
+          reasoning: m.reasoning || null,
           confidence_score: m.confidence ?? null,
         }))
       );
@@ -1080,7 +1090,7 @@ function TaggingModeInner() {
                       <div className="flex flex-wrap gap-1 min-w-0 flex-1 pt-0.5">
                         {(m.labels ?? [m.label]).map((lbl, i) => (
                           <span
-                            key={lbl}
+                            key={`${lbl}-${i}`}
                             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold border"
                             style={{
                               borderColor: ((m.colors ?? [m.color])[i] || m.color) + "50",
@@ -1123,10 +1133,15 @@ function TaggingModeInner() {
                       </div>
                     </div>
 
-                    {/* Evidence preview when not editing */}
-                    {!isEditing && (m.evidence || m.interpretation) && (
-                      <div className="px-2.5 pb-2 border-t border-border/30">
-                        {m.evidence && <p className="text-xs text-muted-foreground pt-1.5 leading-relaxed" dir="rtl">{m.evidence}</p>}
+                    {/* Evidence + reasoning preview when not editing */}
+                    {!isEditing && (m.evidence || m.reasoning || m.interpretation) && (
+                      <div className="px-2.5 pb-2 border-t border-border/30 space-y-1 pt-1.5">
+                        {m.evidence && <p className="text-xs text-muted-foreground leading-relaxed" dir="rtl">{m.evidence}</p>}
+                        {m.reasoning && (
+                          <p className="text-xs text-foreground/50 italic leading-relaxed border-t border-border/20 pt-1" dir="rtl">
+                            <span className="not-italic font-medium text-muted-foreground/70">נימוק: </span>{m.reasoning}
+                          </p>
+                        )}
                         {m.interpretation && <p className="text-xs text-foreground/60 leading-relaxed line-clamp-1" dir="rtl">{m.interpretation}</p>}
                       </div>
                     )}
@@ -1165,6 +1180,18 @@ function TaggingModeInner() {
                             rows={2}
                             dir="rtl"
                             placeholder='למשל: "המורה שואלת: בואו נחשוב..."'
+                            className="w-full bg-background border border-border rounded px-2 py-1 text-xs focus:outline-none focus:border-primary resize-none mt-0.5"
+                          />
+                        </div>
+                        {/* Reasoning textarea */}
+                        <div>
+                          <label className="text-[10px] text-muted-foreground uppercase tracking-wide">נימוק</label>
+                          <textarea
+                            value={editForm.reasoning}
+                            onChange={e => setEditForm(f => f && { ...f, reasoning: e.target.value })}
+                            rows={2}
+                            dir="rtl"
+                            placeholder='למה בחרת קוד זה? אילו קריטריונים הנחו אותך?'
                             className="w-full bg-background border border-border rounded px-2 py-1 text-xs focus:outline-none focus:border-primary resize-none mt-0.5"
                           />
                         </div>
@@ -1435,11 +1462,20 @@ function TaggingModeInner() {
                           </div>
                         </div>
 
-                        {/* Evidence */}
-                        {evidence && (
-                          <p className="px-2.5 pb-2 text-[10px] text-muted-foreground leading-relaxed line-clamp-2" dir="rtl">
-                            {evidence}
-                          </p>
+                        {/* Evidence + reasoning */}
+                        {(evidence || tag.reasoning) && (
+                          <div className="px-2.5 pb-1 space-y-1">
+                            {evidence && (
+                              <p className="text-[10px] text-muted-foreground leading-relaxed line-clamp-2" dir="rtl">
+                                {evidence}
+                              </p>
+                            )}
+                            {tag.reasoning && (
+                              <p className="text-[10px] text-foreground/40 italic leading-relaxed line-clamp-2 border-t border-border/20 pt-1" dir="rtl">
+                                <span className="not-italic font-medium text-muted-foreground/50">נימוק: </span>{tag.reasoning}
+                              </p>
+                            )}
+                          </div>
                         )}
 
                         {/* Accept button */}
@@ -1624,6 +1660,21 @@ function TaggingModeInner() {
                 onChange={(e) => setEvidenceText(e.target.value)}
                 rows={2}
                 placeholder='למשל: "המורה שואלת: בואו נחשוב מה למדנו היום..."'
+                className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-primary resize-none"
+                dir="rtl"
+              />
+            </div>
+
+            {/* Reasoning */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                <AlignLeft size={12} /> נימוק
+              </label>
+              <textarea
+                value={reasoningText}
+                onChange={(e) => setReasoningText(e.target.value)}
+                rows={3}
+                placeholder='למה בחרת בקוד זה? אילו קריטריוני הכרעה הנחו אותך? למשל: "המורה נתנה שם לאסטרטגיה והסבירה מתי להשתמש בה — לכן TDS_META ולא TDS_COG."'
                 className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-primary resize-none"
                 dir="rtl"
               />

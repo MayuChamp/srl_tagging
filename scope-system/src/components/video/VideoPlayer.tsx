@@ -21,6 +21,7 @@ export interface VideoMarker {
   labels?: string[];
   colors?: string[];
   evidence?: string;
+  reasoning?: string;
   interpretation?: string;
   confidence?: number;
 }
@@ -63,8 +64,10 @@ function buildEmbedUrl(url: string, type: VideoUrlType): string {
     return `https://www.youtube.com/embed/${videoId}?rel=0`;
   }
   if (type === "vimeo") {
-    const videoId = url.split("vimeo.com/")[1]?.split(/[?&#/]/)[0] ?? "";
-    return `https://player.vimeo.com/video/${videoId}`;
+    const path = (url.split("vimeo.com/")[1] ?? "").split(/[?#]/)[0];
+    const [videoId, hash] = path.split("/");
+    const base = `https://player.vimeo.com/video/${videoId ?? ""}`;
+    return hash ? `${base}?h=${hash}` : base;
   }
   if (type === "drive") {
     // https://drive.google.com/file/d/FILE_ID/view → preview
@@ -185,6 +188,18 @@ export function VideoPlayer({ url, markers = [], onTimeUpdate, captions = [], se
     videoRef.current.play().catch(() => {});
   }, [seekRequest?.seq]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const openPiP = () => {
+    const w = 720;
+    const h = 440;
+    const left = window.screen.width - w - 20;
+    const top = window.screen.height - h - 60;
+    window.open(
+      url,
+      "video-pip",
+      `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no,status=no`
+    );
+  };
+
   if (isEmbed) {
     return (
       <div ref={containerRef} className="relative bg-black rounded-xl overflow-hidden border border-border shadow-lg">
@@ -198,9 +213,29 @@ export function VideoPlayer({ url, markers = [], onTimeUpdate, captions = [], se
         </div>
         <div className="flex items-center gap-2 px-3 py-2 bg-secondary/40 border-t border-border text-xs text-muted-foreground">
           <Info size={12} className="shrink-0" />
-          <span>
-            Embedded player — use the video controls directly. Set timestamps manually in the annotation form.
+          <span className="flex-1">
+            If the video shows a privacy error, pop it out to watch alongside your annotations.
           </span>
+          <button
+            type="button"
+            onClick={openPiP}
+            className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded border border-border bg-secondary/60 hover:bg-secondary text-foreground font-medium transition-colors"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="7" width="20" height="15" rx="2" />
+              <polyline points="17 2 22 2 22 7" />
+              <line x1="12" y1="12" x2="22" y2="2" />
+            </svg>
+            Pop out
+          </button>
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 px-2.5 py-1 rounded border border-border bg-secondary/60 hover:bg-secondary text-foreground font-medium transition-colors"
+          >
+            Open in {urlType === "vimeo" ? "Vimeo" : urlType === "youtube" ? "YouTube" : "new tab"}
+          </a>
         </div>
       </div>
     );

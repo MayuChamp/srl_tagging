@@ -27,7 +27,7 @@ const CODE_COLORS: Record<string, string> = {
 
 type TagRow = {
   id: string; code_id: string; start_time: number; end_time: number;
-  evidence_text: string | null; confidence_score: number | null;
+  evidence_text: string | null; reasoning: string | null; confidence_score: number | null;
 };
 type EventGroup = TagRow[];
 
@@ -74,7 +74,7 @@ export function SessionViewPlayer({ videoUrl, markers, events, captions = [] }: 
         ) : (
           events.map(group => {
             const first = group[0];
-            const codes = group.map(t => t.code_id);
+            const codes = Array.from(new Set(group.map(t => t.code_id)));
             const strengthLabel =
               first.confidence_score == null ? null :
               first.confidence_score >= 0.8 ? { text: "חזק", cls: "bg-green-500/20 text-green-400 border-green-500/30" } :
@@ -91,11 +91,11 @@ export function SessionViewPlayer({ videoUrl, markers, events, captions = [] }: 
                 <div className="flex items-start justify-between gap-2">
                   {/* Code chips */}
                   <div className="flex flex-wrap gap-1 flex-1 min-w-0">
-                    {codes.map(code => {
+                    {codes.map((code, i) => {
                       const c = CODE_COLORS[code] ?? "#6b7280";
                       return (
                         <span
-                          key={code}
+                          key={`${code}-${i}`}
                           className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold border"
                           style={{ borderColor: c + "50", backgroundColor: c + "18", color: c }}
                         >
@@ -119,10 +119,19 @@ export function SessionViewPlayer({ videoUrl, markers, events, captions = [] }: 
                   </div>
                 </div>
 
-                {first.evidence_text && (
-                  <p className="text-xs text-muted-foreground leading-relaxed border-t border-border/50 pt-2" dir="rtl">
-                    {first.evidence_text}
-                  </p>
+                {(first.evidence_text || first.reasoning) && (
+                  <div className="border-t border-border/50 pt-2 space-y-1">
+                    {first.evidence_text && (
+                      <p className="text-xs text-muted-foreground leading-relaxed" dir="rtl">
+                        {first.evidence_text}
+                      </p>
+                    )}
+                    {first.reasoning && (
+                      <p className="text-xs text-foreground/45 italic leading-relaxed" dir="rtl">
+                        <span className="not-italic font-medium text-muted-foreground/60">נימוק: </span>{first.reasoning}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             );

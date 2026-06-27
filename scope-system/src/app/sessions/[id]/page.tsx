@@ -106,14 +106,14 @@ export default async function SessionDetailPage({
 
   const { data: tagData } = await supabase
     .from("tags")
-    .select("id, code_id, start_time, end_time, evidence_text, confidence_score")
+    .select("id, code_id, start_time, end_time, evidence_text, reasoning, confidence_score")
     .eq("analysis_id", id)
     .order("start_time", { ascending: true });
 
   const tags = tagData || [];
 
   // Group individual tag rows into multi-label events by matching time + evidence
-  type TagRow = { id: string; code_id: string; start_time: number; end_time: number; evidence_text: string | null; confidence_score: number | null };
+  type TagRow = { id: string; code_id: string; start_time: number; end_time: number; evidence_text: string | null; reasoning: string | null; confidence_score: number | null };
   const grouped = new Map<string, TagRow[]>();
   for (const t of tags as TagRow[]) {
     const key = `${t.start_time}|${t.end_time}|${t.evidence_text ?? ""}|${t.confidence_score ?? ""}`;
@@ -133,7 +133,7 @@ export default async function SessionDetailPage({
 
   const markers: VideoMarker[] = events.map(group => {
     const first = group[0];
-    const codes = group.map(t => t.code_id);
+    const codes = Array.from(new Set(group.map(t => t.code_id)));
     return {
       id: first.id,
       startTime: first.start_time,
@@ -143,6 +143,7 @@ export default async function SessionDetailPage({
       labels: codes,
       colors: codes.map(c => CODE_COLORS[c] ?? "#6b7280"),
       evidence: first.evidence_text ?? undefined,
+      reasoning: first.reasoning ?? undefined,
       confidence: first.confidence_score ?? undefined,
     };
   });

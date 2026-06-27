@@ -26,7 +26,7 @@ def extract_audio_wav(video_path: str) -> str:
     return audio_path
 
 
-def analyze_prosody(audio_path: str, segment_duration: float = 5.0, pitch_floor=DEFAULT_PITCH_FLOOR, pitch_ceiling=DEFAULT_PITCH_CEILING) -> list:
+def analyze_prosody(snd, pitch_obj, intensity_obj, segment_duration: float = 5.0) -> list:
     """
     Analyze prosodic features in fixed-duration windows using Praat.
 
@@ -35,11 +35,7 @@ def analyze_prosody(audio_path: str, segment_duration: float = 5.0, pitch_floor=
     """
     import parselmouth
 
-    snd = parselmouth.Sound(audio_path)
     total_duration = snd.duration
-
-    pitch_obj = snd.to_pitch(time_step=0.01, pitch_floor=pitch_floor, pitch_ceiling=pitch_ceiling)
-    intensity_obj = snd.to_intensity(minimum_pitch=pitch_floor, time_step=0.01)
 
     segments = []
     t = 0.0
@@ -90,15 +86,12 @@ def analyze_prosody(audio_path: str, segment_duration: float = 5.0, pitch_floor=
     return segments
 
 
-def detect_pauses(audio_path: str, min_pause_duration: float = 0.5, threshold_db: float = DEFAULT_THRESHOLD_DB, pitch_floor: float = DEFAULT_PITCH_FLOOR) -> list:
+def detect_pauses(snd, intensity_obj, min_pause_duration: float = 0.5, threshold_db: float = DEFAULT_THRESHOLD_DB) -> list:
     """
     Detect silences/pauses based on intensity threshold.
     Threshold: 42dB (calibrated for typical classroom recording).
     """
     import parselmouth
-
-    snd = parselmouth.Sound(audio_path)
-    intensity_obj = snd.to_intensity(minimum_pitch=pitch_floor, time_step=0.01)
 
     pauses = []
     in_pause = False
@@ -187,11 +180,16 @@ def analyze_audio_prosody(video_path: str) -> str:
         print("Extracting WAV for prosody analysis (Praat)...")
         audio_path = extract_audio_wav(video_path)
 
+        print("Loading audio into Praat...")
+        snd = parselmouth.Sound(audio_path)
+        pitch_obj = snd.to_pitch(time_step=0.01, pitch_floor=DEFAULT_PITCH_FLOOR, pitch_ceiling=DEFAULT_PITCH_CEILING)
+        intensity_obj = snd.to_intensity(minimum_pitch=DEFAULT_PITCH_FLOOR, time_step=0.01)
+
         print("Analyzing pitch and intensity per 5s window...")
-        segments = analyze_prosody(audio_path)
+        segments = analyze_prosody(snd, pitch_obj, intensity_obj)
 
         print("Detecting significant pauses...")
-        pauses = detect_pauses(audio_path)
+        pauses = detect_pauses(snd, intensity_obj)
 
         print(f"Prosody analysis complete: {len(segments)} segments, {len(pauses)} notable pauses.")
         return format_prosody_for_prompt(segments, pauses)

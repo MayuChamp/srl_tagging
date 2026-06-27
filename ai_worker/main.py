@@ -29,14 +29,14 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY, options=opts)
 
 # Gemini init
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+gemini_client = genai.Client(api_key=GEMINI_API_KEY, http_options={"timeout": 600.0})
 GEMINI_MODEL = "gemini-2.5-flash"
 
 VIDEO_PATH = os.getenv("VIDEO_PATH", "/Users/yearadany/srl ai tagging/videos/סרטון של המורה פז.mov")
 VIDEO_TITLE = os.getenv("VIDEO_TITLE", "המורה פז")
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./chunks")
 
-def split_video(input_path, output_dir, chunk_duration=600):
+def split_video(input_path, output_dir, chunk_duration=300):
     print(f"Splitting video into {chunk_duration}s chunks...")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -87,6 +87,48 @@ Prosodic Features Guide:
 - Stable moderate pitch + clear explanation → TDS_COG or TDS_META + EX_EXPL
 - Rising end-of-utterance at moderate intensity → TDS_MOT (encouragement)
 When the primary evidence is prosodic (not textual), prefix evidence_text with [PROSODIC].
+
+--- DECISION CRITERIA (apply these explicitly in your reasoning) ---
+
+TDS_META vs TDS_COG — the most common distinction:
+  • Teacher NAMES a strategy ("שיטת החלוקה", "אסטרטגיית ההשוואה") → lean TDS_META
+  • Teacher explains WHEN or WHY to use a strategy (not just how) → TDS_META
+  • Teacher guides student's THINKING PROCESS (e.g., "איך אתה מתכנן לפתור?") → TDS_META
+  • Instruction references specific CONTENT or KNOWLEDGE (e.g., "איזה ערך להציב", "איזה משתנה לבחור") → TDS_COG
+  • Teacher models or activates a cognitive operation on content (comparison, representation, reading a graph) → TDS_COG
+
+EX_IMPL vs EX_PART vs EX_EXPL:
+  • Strategy activated implicitly, no naming → EX_IMPL
+  • Strategy named but no explanation of when/why/how → EX_PART
+  • ALL FOUR present: what the strategy is, when to use it, why it helps, how to apply it → EX_EXPL
+
+SRL process codes — pick all that apply:
+  • Goal or success criterion stated → SRL_GOAL
+  • Course of action planned or strategy selected → SRL_PLAN
+  • Student/teacher monitors comprehension or identifies difficulty → SRL_MON
+  • Strategy or approach adjusted mid-task → SRL_CTRL
+  • New insight or lesson drawn → SRL_REFL
+  • Student requests focused help (not just "I don't understand") → SRL_HELP
+
+MO codes — assign when the teacher COULD HAVE but DID NOT:
+  • Had a natural moment to name or explain a strategy, but didn't → MO_EXPL
+  • Student showed confusion and teacher didn't prompt self-monitoring → MO_MON
+  • Correct answer given but teacher didn't ask for justification/evidence → MO_EVID
+
+--- FEW-SHOT EXAMPLE (with reasoning) ---
+
+Transcript segment [2220s–2270s]:
+  "המורה: בואו נחשוב רגע על השיטה שנשתמש בה. כשיש לנו משוואה עם שני נעלמים, הדרך הכי יעילה היא שיטת הצבה. אתה יודע מתי כדאי להשתמש בה?"
+
+Expected output for this event:
+{
+  "code_ids": ["TDS_META", "EX_EXPL", "SRL_PLAN", "TA2", "Q3", "EV3"],
+  "start_time": 2220.0,
+  "end_time": 2270.0,
+  "evidence_text": "המורה נתנה שם לאסטרטגיה ('שיטת הצבה'), הסבירה מתי כדאי להשתמש בה, והפנתה את התלמיד לתכנן.",
+  "reasoning": "TDS_META: המורה מתייחסת לתהליך החשיבה ולבחירת האסטרטגיה, לא לתוכן הספציפי. EX_EXPL: ארבעת המרכיבים נוכחים — מה (שיטת הצבה), מתי (כשיש שני נעלמים), למה (הדרך היעילה), וכיצד (שאלת ההפניה). SRL_PLAN: המורה מנחה את התלמיד לתכנן אסטרטגיה לפני הפתרון. Q3/EV3: עדות טקסטואלית ישירה וברורה.",
+  "confidence_score": 0.95
+}
 
 --- SCOPE CODEBOOK ---
 
@@ -207,6 +249,11 @@ For each instructional event assign codes from ALL applicable dimensions:
 
 All codes in an event share the SAME timestamps and evidence_text.
 
+For EVERY event you must provide a "reasoning" field in Hebrew that explains:
+  1. Why each code was chosen (reference the decision criteria above)
+  2. Which criteria pointed toward this code vs. alternatives considered
+  3. What specific evidence (textual or prosodic) supports each decision
+
 Return valid JSON in exactly this format:
 {
   "events": [
@@ -215,6 +262,7 @@ Return valid JSON in exactly this format:
       "start_time": <seconds as float>,
       "end_time": <seconds as float>,
       "evidence_text": "<exact Hebrew quote or [PROSODIC] description>",
+      "reasoning": "<Hebrew explanation of why each code was assigned, referencing decision criteria>",
       "confidence_score": <float 0.0–1.0>
     }
   ]
@@ -240,7 +288,7 @@ For EVERY audio event return an entry:
    - צלילי מכשירים (פעמון, מקרן, מחשב)
    - כל קול אחר שנשמע
 
-Return ALL events sorted by start time. Be thorough — include brief events too."""
+Return ALL events sorted by start time. To avoid overly long outputs, group continuous ambient noises into longer segments (e.g., one 30-second 'background noise' event instead of 15 short ones). Do not log micro-events under 2 seconds unless they are speech."""
 
 RICH_TRANSCRIPT_SCHEMA = {
     "type": "object",
@@ -283,8 +331,13 @@ def analyze_video_with_gemini(video_path):
             file=audio_path,
             config=types.UploadFileConfig(mime_type="audio/mp3")
         )
+        wait_time = 0
         while uploaded_file.state and uploaded_file.state.name == "PROCESSING":
-            time.sleep(2)
+            if wait_time > 180:
+                print("WARNING: Gemini File API processing timeout (180s).")
+                break
+            time.sleep(5)
+            wait_time += 5
             uploaded_file = gemini_client.files.get(name=uploaded_file.name)
 
         # ── Pass 1: speech transcription for SRL analysis ──────────────────
@@ -381,9 +434,10 @@ def analyze_video_with_gemini(video_path):
                                 "start_time":      {"type": "number"},
                                 "end_time":        {"type": "number"},
                                 "evidence_text":   {"type": "string"},
+                                "reasoning":       {"type": "string"},
                                 "confidence_score":{"type": "number"}
                             },
-                            "required": ["code_ids", "start_time", "end_time", "evidence_text", "confidence_score"]
+                            "required": ["code_ids", "start_time", "end_time", "evidence_text", "reasoning", "confidence_score"]
                         }
                     }
                 },
@@ -403,7 +457,7 @@ def analyze_video_with_gemini(video_path):
     print(f"Gemini identified {len(events)} events ({total_codes} total code labels).")
     return events, rich_entries
 
-def compress_chunk(input_path):
+def compress_video(input_path):
     output_path = os.path.splitext(input_path)[0] + "_compressed.mp4"
     print(f"Compressing {input_path} to reduce size (under 50MB)...")
     # Scale down to 360p, use ultrafast preset and CRF 32 to guarantee size fits free tier
@@ -420,87 +474,135 @@ def compress_chunk(input_path):
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return output_path
 
-def process_chunk(chunk_path, chunk_index):
-    file_name = os.path.basename(chunk_path)
-    print(f"--- Processing {file_name} ---")
+def process_single_video(local_path, video_title, video_id=None):
+    """
+    Processes a video file completely, uploading it as a single video in the DB.
+    To prevent Gemini API limits, it internally splits the video into 5-minute chunks,
+    processes them, and aggregates the tags under the single video entry.
+    """
+    import shutil
+    file_name = os.path.basename(local_path)
+    print(f"--- Processing Video: {video_title} ---")
     
-    # 0. Compress chunk
-    compressed_path = compress_chunk(chunk_path)
-    compressed_file_name = os.path.basename(compressed_path)
-    
-    # 1. Upload to Supabase Storage
-    print(f"Uploading {compressed_file_name} to Supabase Storage...")
-    try:
-        with open(compressed_path, 'rb') as f:
-            # Use upsert to overwrite if it failed previously
-            supabase.storage.from_("videos").upload(compressed_file_name, f, file_options={"upsert": "true"})
-    except Exception as e:
-        print(f"Error uploading to Supabase storage: {e}")
-        return
-    
-    # Get public URL
-    public_url = supabase.storage.from_("videos").get_public_url(compressed_file_name)
-    
-    # 2. Insert into videos table
-    print("Inserting into videos table...")
-    video_res = supabase.table("videos").insert({
-        "title": f"{VIDEO_TITLE} - חלק {chunk_index+1}",
-        "storage_path": public_url,
-        "status": "processing"
-    }).execute()
-    
-    if not video_res.data:
-        print("Error: Failed to insert video into database.")
-        return
-    video_id = video_res.data[0]['id']
-    
-    # Create analysis session
-    analysis_res = supabase.table("analyses").insert({
-        "video_id": video_id,
-        "is_ai_generated": True
-    }).execute()
-    
+    # 0. Compress & Upload if it's a new local video
+    if video_id is None:
+        compressed_path = compress_video(local_path)
+        compressed_file_name = os.path.basename(compressed_path)
+        
+        print(f"Uploading {compressed_file_name} to Supabase Storage...")
+        try:
+            with open(compressed_path, 'rb') as f:
+                supabase.storage.from_("videos").upload(compressed_file_name, f, file_options={"upsert": "true"})
+        except Exception as e:
+            print(f"Error uploading to Supabase storage: {e}")
+            return
+        
+        public_url = supabase.storage.from_("videos").get_public_url(compressed_file_name)
+        
+        print("Inserting into videos table...")
+        video_res = supabase.table("videos").insert({
+            "title": video_title,
+            "storage_path": public_url,
+            "status": "processing"
+        }).execute()
+        
+        if not video_res.data:
+            print("Error: Failed to insert video into database.")
+            return
+        video_id = video_res.data[0]['id']
+        path_to_process = compressed_path
+    else:
+        path_to_process = local_path
+        supabase.table("videos").update({"status": "processing"}).eq("id", video_id).execute()
+
+    # Create or get AI analysis session (only touch is_ai_generated=True)
+    analysis_res = supabase.table("analyses").select("id").eq("video_id", video_id).eq("is_ai_generated", True).execute()
     if not analysis_res.data:
-        print("Error: Failed to create analysis session.")
-        return
+        analysis_res = supabase.table("analyses").insert({
+            "video_id": video_id,
+            "is_ai_generated": True
+        }).execute()
+        if not analysis_res.data:
+            print(f"Error: Failed to create analysis session.")
+            return
+    else:
+        # Clear stale tags from any previous partial run
+        supabase.table("tags").delete().eq("analysis_id", analysis_res.data[0]["id"]).execute()
+    
     analysis_id = analysis_res.data[0]['id']
     
-    # 3. Analyze with Gemini
+    chunk_dir = os.path.join(OUTPUT_DIR, f"temp_{video_id}")
     try:
-        events, rich_entries = analyze_video_with_gemini(compressed_path)
-        print(f"Gemini returned {len(events)} events.")
-
-        # 4. Insert tags to DB — one row per code_id, all sharing the same timestamps/evidence
-        rows = []
-        for event in events:
-            for code_id in event.get("code_ids", []):
-                rows.append({
-                    "analysis_id": analysis_id,
-                    "code_id": code_id,
-                    "start_time": event.get("start_time"),
-                    "end_time": event.get("end_time"),
-                    "evidence_text": event.get("evidence_text"),
-                    "confidence_score": event.get("confidence_score")
-                })
-        if rows:
-            supabase.table("tags").insert(rows).execute()
-
-        # 5. Save rich audio transcript to analysis summary_metrics
-        if rich_entries:
+        os.makedirs(chunk_dir, exist_ok=True)
+        # Split video into 5-minute chunks internally to avoid timeout/OOM issues on Gemini API
+        split_video(path_to_process, chunk_dir, chunk_duration=300)
+        
+        chunk_files = sorted(glob.glob(f"{chunk_dir}/chunk_*.mp4"))
+        print(f"Video internally split into {len(chunk_files)} chunks for safe API processing.")
+        
+        all_rows = []
+        all_rich_entries = []
+        
+        for idx, chunk_file in enumerate(chunk_files):
+            print(f"Analyzing internal chunk {idx+1}/{len(chunk_files)}...")
+            offset = idx * 300
+            events, rich_entries = analyze_video_with_gemini(chunk_file)
+            
+            for event in events:
+                start_t = event.get("start_time", 0) + offset
+                end_t = event.get("end_time", 0) + offset
+                for code_id in event.get("code_ids", []):
+                    all_rows.append({
+                        "analysis_id": analysis_id,
+                        "code_id": code_id,
+                        "start_time": start_t,
+                        "end_time": end_t,
+                        "evidence_text": event.get("evidence_text"),
+                        "reasoning": event.get("reasoning"),
+                        "confidence_score": event.get("confidence_score")
+                    })
+            
+            for entry in rich_entries:
+                if "start" in entry: entry["start"] += offset
+                if "end" in entry: entry["end"] += offset
+                all_rich_entries.append(entry)
+                
+            # Free up space locally
+            try:
+                os.remove(chunk_file)
+            except OSError:
+                pass
+                
+        if all_rows:
+            # Batch inserts to avoid large payload errors
+            for i in range(0, len(all_rows), 100):
+                supabase.table("tags").insert(all_rows[i:i+100]).execute()
+        
+        if all_rich_entries:
             supabase.table("analyses").update({
-                "summary_metrics": {"audio_transcript": rich_entries}
+                "summary_metrics": {"audio_transcript": all_rich_entries}
             }).eq("id", analysis_id).execute()
-
-        # Mark as completed
+            
         supabase.table("videos").update({"status": "completed"}).eq("id", video_id).execute()
-        print(f"{file_name} processing COMPLETED ({len(rows)} tag rows for {len(events)} events).")
+        print(f"Video '{video_title}' analysis COMPLETED ({len(all_rows)} tag rows total).")
         
     except Exception as e:
-        print(f"Error analyzing {file_name}: {e}")
+        import traceback
+        traceback.print_exc()
+        print(f"Error analyzing video '{video_title}': {e}")
         supabase.table("videos").update({"status": "failed"}).eq("id", video_id).execute()
-        
-    print("Sleeping for 60 seconds to respect API rate limits...")
-    time.sleep(60)
+    finally:
+        if os.path.exists(chunk_dir):
+            try:
+                shutil.rmtree(chunk_dir)
+            except Exception:
+                pass
+        # Clean up compressed video if we created it
+        if video_id is None and os.path.exists(path_to_process):
+             try:
+                 os.remove(path_to_process)
+             except OSError:
+                 pass
 
 def process_pending_videos():
     print("Checking for pending videos in database...")
@@ -514,10 +616,11 @@ def process_pending_videos():
     for video in videos:
         video_id = video["id"]
         storage_path = video.get("storage_path", "")
+        if not storage_path:
+            continue
+
         file_name = os.path.basename(storage_path.split("?")[0])
         local_path = os.path.join(OUTPUT_DIR, file_name)
-
-        supabase.table("videos").update({"status": "processing"}).eq("id", video_id).execute()
 
         if not os.path.exists(local_path):
             print(f"Downloading {file_name} from storage...")
@@ -529,51 +632,16 @@ def process_pending_videos():
                     f.write(chunk)
             print("Download complete.")
 
-        analysis_res = supabase.table("analyses").select("id").eq("video_id", video_id).execute()
-        if not analysis_res.data:
-            analysis_res = supabase.table("analyses").insert({
-                "video_id": video_id,
-                "is_ai_generated": True
-            }).execute()
-            if not analysis_res.data:
-                print(f"Error: Failed to create analysis session for video {video_id}.")
-                continue
-        else:
-            # Clear stale tags from any previous partial run before re-inserting
-            supabase.table("tags").delete().eq("analysis_id", analysis_res.data[0]["id"]).execute()
-        analysis_id = analysis_res.data[0]["id"]
-
-        try:
-            events, rich_entries = analyze_video_with_gemini(local_path)
-            rows = []
-            for event in events:
-                for code_id in event.get("code_ids", []):
-                    rows.append({
-                        "analysis_id": analysis_id,
-                        "code_id": code_id,
-                        "start_time": event.get("start_time"),
-                        "end_time": event.get("end_time"),
-                        "evidence_text": event.get("evidence_text"),
-                        "confidence_score": event.get("confidence_score")
-                    })
-            if rows:
-                supabase.table("tags").insert(rows).execute()
-            if rich_entries:
-                supabase.table("analyses").update({
-                    "summary_metrics": {"audio_transcript": rich_entries}
-                }).eq("id", analysis_id).execute()
-            supabase.table("videos").update({"status": "completed"}).eq("id", video_id).execute()
-            print(f"Video '{video['title']}' analysis COMPLETED ({len(events)} events, {len(rows)} tag rows).")
-        except Exception as e:
-            print(f"Error analyzing video '{video['title']}': {e}")
-            supabase.table("videos").update({"status": "failed"}).eq("id", video_id).execute()
-        finally:
-            if os.path.exists(local_path):
-                try:
-                    os.remove(local_path)
-                except Exception:
-                    pass
-
+        process_single_video(local_path, video["title"], video_id=video_id)
+        
+        if os.path.exists(local_path):
+            try:
+                os.remove(local_path)
+            except Exception:
+                pass
+        
+        print("Sleeping for 60 seconds to respect API rate limits...")
+        time.sleep(60)
 
 def main():
     print("Starting AI Worker Pipeline")
@@ -586,19 +654,13 @@ def main():
     # First: resume any videos already in the DB that are pending
     process_pending_videos()
 
-    # Then: process new video from disk; check completion per-chunk so partial runs resume correctly
+    # Then: process new video from disk directly
     if os.path.exists(VIDEO_PATH):
-        if not glob.glob(f"{OUTPUT_DIR}/chunk_???.mp4"):
-            split_video(VIDEO_PATH, OUTPUT_DIR)
-        chunks = sorted(glob.glob(f"{OUTPUT_DIR}/chunk_???.mp4"))
-        print(f"Found {len(chunks)} chunk(s) to process.")
-        for i, chunk in enumerate(chunks):
-            chunk_title = f"{VIDEO_TITLE} - חלק {i+1}"
-            already_done = supabase.table("videos").select("id").eq("title", chunk_title).eq("status", "completed").execute()
-            if already_done.data:
-                print(f"Chunk '{chunk_title}' already completed. Skipping.")
-                continue
-            process_chunk(chunk, i)
+        already_done = supabase.table("videos").select("id").eq("title", VIDEO_TITLE).eq("status", "completed").execute()
+        if already_done.data:
+            print(f"Video '{VIDEO_TITLE}' already completed. Skipping.")
+        else:
+            process_single_video(VIDEO_PATH, VIDEO_TITLE, video_id=None)
 
     print("All processing finished!")
 
