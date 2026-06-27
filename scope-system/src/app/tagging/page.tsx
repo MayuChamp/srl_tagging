@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { VideoPlayer, type VideoMarker, type Caption } from "@/components/video/VideoPlayer";
 import {
   Save, Tag, Clock, AlignLeft, ShieldCheck,
-  FolderOpen, Info, Download, Upload, Trash2, Library, X, Video,
+  FolderOpen, Download, Upload, Trash2, Library, X, Video,
   Search, RotateCcw, ChevronDown, PlayCircle, Captions, FileSpreadsheet,
   Pencil, Check, Play, Bot, Sparkles, CheckCheck, Mic, FileText,
   SkipBack, SkipForward,
@@ -547,8 +547,8 @@ function TaggingModeInner() {
     e.target.value = "";
   };
 
-  const handleSetStartTime = () => setStartTime(currentTime);
-  const handleSetEndTime = () => setEndTime(currentTime);
+  const handleSetStartTime = () => { setStartTime(currentTime); setStartTimeText(formatTime(currentTime)); };
+  const handleSetEndTime = () => { setEndTime(currentTime); setEndTimeText(formatTime(currentTime)); };
 
   const handleSaveTag = () => {
     if (startTime === "" || endTime === "") return alert("Please set start and end time");
@@ -1607,62 +1607,54 @@ function TaggingModeInner() {
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
                 <Clock size={12} /> Time Range
               </label>
-              {isEmbedMode ? (
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary/30 rounded px-2 py-1.5">
-                    <Info size={11} className="shrink-0" /> הכנס זמן בפורמט <span className="font-mono mx-0.5">דק:שנ</span> — לדוגמה <span className="font-mono mx-0.5">1:30</span>
-                  </div>
+              <div className="space-y-1.5">
+                {!isEmbedMode && (
                   <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={startTimeText}
-                      onChange={(e) => {
-                        setStartTimeText(e.target.value);
-                        const parsed = parseTimeString(e.target.value);
-                        if (parsed !== "") setStartTime(parsed);
-                        else if (e.target.value === "") setStartTime("");
-                      }}
-                      onBlur={() => {
-                        if (startTime !== "") setStartTimeText(formatTime(startTime as number));
-                      }}
-                      placeholder="0:00"
-                      className="flex-1 bg-background border border-border rounded-md px-3 py-1.5 font-mono text-sm focus:outline-none focus:border-primary text-center"
-                    />
+                    <button onClick={handleSetStartTime}
+                      className="flex-1 py-1.5 rounded-md text-xs transition-all border bg-secondary hover:bg-secondary/80 border-border text-muted-foreground">
+                      ← הגדר כניסה
+                    </button>
                     <span className="text-muted-foreground text-xs">–</span>
-                    <input
-                      type="text"
-                      value={endTimeText}
-                      onChange={(e) => {
-                        setEndTimeText(e.target.value);
-                        const parsed = parseTimeString(e.target.value);
-                        if (parsed !== "") setEndTime(parsed);
-                        else if (e.target.value === "") setEndTime("");
-                      }}
-                      onBlur={() => {
-                        if (endTime !== "") setEndTimeText(formatTime(endTime as number));
-                      }}
-                      placeholder="0:00"
-                      className="flex-1 bg-background border border-border rounded-md px-3 py-1.5 font-mono text-sm focus:outline-none focus:border-primary text-center"
-                    />
+                    <button onClick={handleSetEndTime}
+                      className="flex-1 py-1.5 rounded-md text-xs transition-all border bg-secondary hover:bg-secondary/80 border-border text-muted-foreground">
+                      הגדר יציאה →
+                    </button>
                   </div>
-                </div>
-              ) : (
+                )}
                 <div className="flex items-center gap-2">
-                  <button onClick={handleSetStartTime}
-                    className={`flex-1 py-2 rounded-md font-mono text-sm transition-all border ${
-                      startTime !== "" ? "bg-primary/10 border-primary/40 text-primary font-semibold" : "bg-secondary hover:bg-secondary/80 border-border text-muted-foreground"
-                    }`}>
-                    {startTime === "" ? "Set Start" : formatTime(startTime as number)}
-                  </button>
+                  <input
+                    type="text"
+                    value={startTimeText}
+                    onChange={(e) => {
+                      setStartTimeText(e.target.value);
+                      const parsed = parseTimeString(e.target.value);
+                      if (parsed !== "") setStartTime(parsed);
+                      else if (e.target.value === "") setStartTime("");
+                    }}
+                    onBlur={() => {
+                      if (startTime !== "") setStartTimeText(formatTime(startTime as number));
+                    }}
+                    placeholder="0:00"
+                    className="flex-1 bg-background border border-border rounded-md px-3 py-1.5 font-mono text-sm focus:outline-none focus:border-primary text-center"
+                  />
                   <span className="text-muted-foreground text-xs">–</span>
-                  <button onClick={handleSetEndTime}
-                    className={`flex-1 py-2 rounded-md font-mono text-sm transition-all border ${
-                      endTime !== "" ? "bg-primary/10 border-primary/40 text-primary font-semibold" : "bg-secondary hover:bg-secondary/80 border-border text-muted-foreground"
-                    }`}>
-                    {endTime === "" ? "Set End" : formatTime(endTime as number)}
-                  </button>
+                  <input
+                    type="text"
+                    value={endTimeText}
+                    onChange={(e) => {
+                      setEndTimeText(e.target.value);
+                      const parsed = parseTimeString(e.target.value);
+                      if (parsed !== "") setEndTime(parsed);
+                      else if (e.target.value === "") setEndTime("");
+                    }}
+                    onBlur={() => {
+                      if (endTime !== "") setEndTimeText(formatTime(endTime as number));
+                    }}
+                    placeholder="0:00"
+                    className="flex-1 bg-background border border-border rounded-md px-3 py-1.5 font-mono text-sm focus:outline-none focus:border-primary text-center"
+                  />
                 </div>
-              )}
+              </div>
             </div>
 
             {/* Confidence */}
