@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Search, Trash2, RefreshCw, Save, X, AlertTriangle, CheckCircle2,
   Video, MoreVertical, Eye, Clock,
@@ -54,6 +54,37 @@ export function VideoSearch({ videos: initialVideos }: { videos: VideoItem[] }) 
   const [isSavingSession, setIsSavingSession] = useState(false);
   const [savedSessionId, setSavedSessionId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [videoProgress, setVideoProgress] = useState<Record<string, { current: number; total: number }>>({});
+  const processingRef = useRef<string[]>([]);
+
+  // Keep ref in sync with current processing video IDs
+  useEffect(() => {
+    processingRef.current = videos.filter(v => v.status === "processing").map(v => v.id);
+  }, [videos]);
+
+  // Poll progress for any processing videos
+  useEffect(() => {
+    const poll = async () => {
+      const ids = processingRef.current;
+      if (!ids.length) return;
+      for (const id of ids) {
+        try {
+          const res = await fetch(`/api/analyze?videoId=${id}`);
+          if (!res.ok) continue;
+          const data = await res.json();
+          if (data.status !== "processing") {
+            setVideos(prev => prev.map(v => v.id === id ? { ...v, status: data.status } : v));
+          }
+          if (data.progress) {
+            setVideoProgress(prev => ({ ...prev, [id]: data.progress }));
+          }
+        } catch { /* ignore network errors */ }
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 10_000);
+    return () => clearInterval(interval);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = query.trim()
     ? videos.filter(v => (v.title || "Untitled").toLowerCase().includes(query.toLowerCase()))
@@ -298,6 +329,26 @@ export function VideoSearch({ videos: initialVideos }: { videos: VideoItem[] }) 
                       )}
                     </div>
                   </div>
+
+                  {/* Progress bar (processing only) */}
+                  {sk === "processing" && (() => {
+                    const prog = videoProgress[video.id];
+                    const pct = prog ? Math.round((prog.current / prog.total) * 100) : null;
+                    return (
+                      <div className="mt-3 space-y-1.5">
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>{prog ? `chunk ${prog.current}/${prog.total}` : "מתחיל…"}</span>
+                          {pct !== null && <span>{pct}%</span>}
+                        </div>
+                        <div className="h-1.5 bg-secondary/40 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${pct ?? 0}%`, background: s.color }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Metadata row */}
                   <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/50 text-xs text-muted-foreground">

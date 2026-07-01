@@ -70,6 +70,20 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  if (status === "processing") {
+    const { data: analysis } = await supabase
+      .from("analyses")
+      .select("summary_metrics")
+      .eq("video_id", videoId)
+      .eq("is_ai_generated", true)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const progress = (analysis?.summary_metrics as Record<string, unknown> | null)?.progress ?? null;
+    return NextResponse.json({ status, progress });
+  }
+
   return NextResponse.json({ status });
 }
 

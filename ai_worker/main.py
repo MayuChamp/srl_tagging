@@ -515,8 +515,8 @@ def process_single_video(local_path, video_title, video_id=None):
         path_to_process = local_path
         supabase.table("videos").update({"status": "processing"}).eq("id", video_id).execute()
 
-    # Create or get AI analysis session (only touch is_ai_generated=True)
-    analysis_res = supabase.table("analyses").select("id").eq("video_id", video_id).eq("is_ai_generated", True).execute()
+    # Use the most-recent AI analysis (matches what the UI shows)
+    analysis_res = supabase.table("analyses").select("id").eq("video_id", video_id).eq("is_ai_generated", True).order("created_at", desc=True).limit(1).execute()
     if not analysis_res.data:
         analysis_res = supabase.table("analyses").insert({
             "video_id": video_id,
@@ -528,15 +528,20 @@ def process_single_video(local_path, video_title, video_id=None):
     else:
         # Clear stale tags from any previous partial run
         supabase.table("tags").delete().eq("analysis_id", analysis_res.data[0]["id"]).execute()
-    
+
     analysis_id = analysis_res.data[0]['id']
 
     def ensure_analysis_exists(vid_id, a_id):
-        """Returns valid analysis_id, recreating the row if it was deleted by the UI."""
+        """Returns valid analysis_id. If deleted externally, finds the newest existing one."""
         check = supabase.table("analyses").select("id").eq("id", a_id).execute()
         if check.data:
             return a_id
-        print(f"WARNING: analysis {a_id} was deleted externally — recreating.")
+        # Analysis was deleted by a re-analyze trigger — find the new one it created
+        newer = supabase.table("analyses").select("id").eq("video_id", vid_id).eq("is_ai_generated", True).order("created_at", desc=True).limit(1).execute()
+        if newer.data:
+            print(f"WARNING: analysis {a_id[:8]} deleted externally, switching to {newer.data[0]['id'][:8]}.")
+            return newer.data[0]["id"]
+        # Nothing exists — create fresh
         new_res = supabase.table("analyses").insert({
             "video_id": vid_id,
             "is_ai_generated": True
@@ -552,7 +557,13 @@ def process_single_video(local_path, video_title, video_id=None):
         split_video(path_to_process, chunk_dir, chunk_duration=300)
 
         chunk_files = sorted(glob.glob(f"{chunk_dir}/chunk_*.mp4"))
-        print(f"Video internally split into {len(chunk_files)} chunks for safe API processing.")
+        total_chunks = len(chunk_files)
+        print(f"Video internally split into {total_chunks} chunks for safe API processing.")
+
+        # Write initial progress so the UI can show 0/N immediately
+        supabase.table("analyses").update({
+            "summary_metrics": {"progress": {"current": 0, "total": total_chunks}}
+        }).eq("id", analysis_id).execute()
 
         total_rows = 0
         all_rich_entries = []
@@ -585,6 +596,11 @@ def process_single_video(local_path, video_title, video_id=None):
                     supabase.table("tags").insert(chunk_rows[i:i+100]).execute()
                 total_rows += len(chunk_rows)
                 print(f"Chunk {idx+1}: inserted {len(chunk_rows)} tag rows ({total_rows} total so far).")
+
+            # Update progress after each chunk
+            supabase.table("analyses").update({
+                "summary_metrics": {"progress": {"current": idx + 1, "total": total_chunks}}
+            }).eq("id", analysis_id).execute()
 
             for entry in rich_entries:
                 if "start" in entry: entry["start"] += offset

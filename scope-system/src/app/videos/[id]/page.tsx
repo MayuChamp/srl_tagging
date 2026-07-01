@@ -63,6 +63,7 @@ export default async function VideoDetailPage({
     .from("analyses")
     .select("*")
     .eq("video_id", id)
+    .eq("is_ai_generated", true)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();

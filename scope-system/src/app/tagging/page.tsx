@@ -42,6 +42,80 @@ interface AiEvent {
   confidence_score: number | null;
 }
 
+// ── TDS Meta-Coding layer ────────────────────────────────────────────────────
+
+const META_INTRO_TYPES = [
+  'עצירה לחשיבה',
+  'שיום אסטרטגיה',
+  'הזמנה לבדיקה',
+  'הזמנה לבחירה',
+  'רפלקציה',
+  'אחר',
+] as const;
+type MetaIntroType = typeof META_INTRO_TYPES[number] | '';
+
+interface TdsMetaForm {
+  basicClass: 'COG' | 'OVERLAP' | 'META' | null;
+  metaIntro: boolean;
+  metaIntroType: MetaIntroType;
+  stgNaming: boolean;
+  stgWhen: boolean;
+  stgHow: boolean;
+  stgWhy: boolean;
+  stgWhenNot: boolean;
+  tdReasoning: string;
+}
+
+interface StoredTdsMeta extends TdsMetaForm {
+  metaStgScore: number;
+  missedMeta: 'none' | 'partial' | 'full';
+  moScore: number;
+  moComponents: string[];
+}
+
+const EMPTY_TDS_META: TdsMetaForm = {
+  basicClass: null,
+  metaIntro: false,
+  metaIntroType: '',
+  stgNaming: false,
+  stgWhen: false,
+  stgHow: false,
+  stgWhy: false,
+  stgWhenNot: false,
+  tdReasoning: '',
+};
+
+function computeTdsMeta(f: TdsMetaForm): StoredTdsMeta {
+  const score =
+    (f.stgNaming ? 1 : 0) +
+    (f.stgWhen ? 1 : 0) +
+    (f.stgHow ? 1 : 0) +
+    (f.stgWhy ? 1 : 0) +
+    (f.stgWhenNot ? 1 : 0);
+
+  let missedMeta: 'none' | 'partial' | 'full' = 'none';
+  let moScore = 0;
+  const moComponents: string[] = [];
+
+  if (f.metaIntro) {
+    if (score === 0) {
+      missedMeta = 'full';
+      moScore = 5;
+      moComponents.push('שיום', 'מתי להשתמש', 'איך להשתמש', 'למה להשתמש', 'מתי לא להשתמש');
+    } else if (score < 5) {
+      missedMeta = 'partial';
+      moScore = 5 - score;
+      if (!f.stgNaming) moComponents.push('שיום');
+      if (!f.stgWhen) moComponents.push('מתי להשתמש');
+      if (!f.stgHow) moComponents.push('איך להשתמש');
+      if (!f.stgWhy) moComponents.push('למה להשתמש');
+      if (!f.stgWhenNot) moComponents.push('מתי לא להשתמש');
+    }
+  }
+
+  return { ...f, metaStgScore: score, missedMeta, moScore, moComponents };
+}
+
 const PRISMS = {
   // ── SCOPE / SRL Codebook ────────────────────────────────────────────────────
   SCOPE: [
@@ -239,6 +313,24 @@ function TaggingModeInner() {
   }, [aiTags]);
   const [processingStartedAt, setProcessingStartedAt] = useState<number | null>(null);
 
+  // TDS Meta-Coding state
+
+  const [tdsMetaForm, setTdsMetaForm] = useState<TdsMetaForm>({ ...EMPTY_TDS_META });
+  const [markerTdsMeta, setMarkerTdsMeta] = useState<Map<string, StoredTdsMeta>>(new Map());
+
+  const hasTdsCode = useMemo(
+    () => [...selectedCodes].some(c => c.startsWith('TDS_')),
+    [selectedCodes]
+  );
+  const computedTds = useMemo(() => computeTdsMeta(tdsMetaForm), [tdsMetaForm]);
+  const suggestedBasicClass = useMemo((): 'COG' | 'OVERLAP' | 'META' | null => {
+    const { stgNaming, stgWhen, stgHow, stgWhy, stgWhenNot } = tdsMetaForm;
+    const hasNonNaming = stgWhen || stgHow || stgWhy || stgWhenNot;
+    if (stgNaming && !hasNonNaming) return 'OVERLAP';
+    if (hasNonNaming) return 'META';
+    return null;
+  }, [tdsMetaForm]);
+
   const seekToTime = (time: number) => {
     setSeekRequest(prev => ({ time, seq: (prev?.seq ?? 0) + 1 }));
   };
@@ -374,6 +466,7 @@ function TaggingModeInner() {
 
   const handleRemoveMarker = (id: string) => {
     setMarkers(prev => prev.filter(m => m.id !== id));
+    setMarkerTdsMeta(prev => { const n = new Map(prev); n.delete(id); return n; });
     if (editingMarkerId === id) { setEditingMarkerId(null); setEditForm(null); }
   };
 
@@ -470,6 +563,37 @@ function TaggingModeInner() {
         (analysis.videos as { storage_path: string } | null)?.storage_path ||
         analysis.summary_metrics?.video_url || null;
       const videoId: string | null = analysis.video_id || null;
+
+      // Load tds_meta records and map them to restored markers by (start, end)
+      const { data: tdsMetaData } = await supabase
+        .from("tds_meta")
+        .select("*")
+        .eq("analysis_id", sessionId);
+
+      const tdsMetaByTime = new Map<string, StoredTdsMeta>();
+      for (const row of (tdsMetaData || [])) {
+        tdsMetaByTime.set(`${row.start_time}|${row.end_time}`, {
+          basicClass: row.basic_class,
+          metaIntro: row.meta_intro,
+          metaIntroType: row.meta_intro_type ?? '',
+          stgNaming: row.stg_naming === 1,
+          stgWhen: row.stg_when === 1,
+          stgHow: row.stg_how === 1,
+          stgWhy: row.stg_why === 1,
+          stgWhenNot: row.stg_when_not === 1,
+          tdReasoning: row.tds_reasoning ?? '',
+          metaStgScore: (row.stg_naming + row.stg_when + row.stg_how + row.stg_why + row.stg_when_not),
+          missedMeta: row.missed_meta ?? 'none',
+          moScore: row.mo_score ?? 0,
+          moComponents: row.mo_components ?? [],
+        });
+      }
+      const restoredTdsMeta = new Map<string, StoredTdsMeta>();
+      for (const m of restoredMarkers) {
+        const meta = tdsMetaByTime.get(`${m.startTime}|${m.endTime}`);
+        if (meta) restoredTdsMeta.set(m.id, meta);
+      }
+      setMarkerTdsMeta(restoredTdsMeta);
 
       setMarkers(restoredMarkers);
       setSessionName(analysis.summary_metrics?.session_name || "");
@@ -602,10 +726,17 @@ function TaggingModeInner() {
       reasoning: reasoningText || undefined,
       confidence: confidenceScore,
     };
+    // Capture tds_meta for this marker before state resets
+    const newTdsMeta = new Map(markerTdsMeta);
+    if (hasTdsCode && tdsMetaForm.basicClass) {
+      newTdsMeta.set(newMarker.id, computeTdsMeta(tdsMetaForm));
+    }
+    setMarkerTdsMeta(newTdsMeta);
+
     setMarkers(prev => {
       const newMarkers = [...prev, newMarker];
       // Auto-save when a new tag is made
-      setTimeout(() => handleSaveSessionToSupabase(newMarkers), 0);
+      setTimeout(() => handleSaveSessionToSupabase(newMarkers, newTdsMeta), 0);
       return newMarkers;
     });
     setStartTime("");
@@ -616,10 +747,15 @@ function TaggingModeInner() {
     setReasoningText("");
     setConfidenceScore(0.66);
     setSelectedCodes(new Set());
+    setTdsMetaForm({ ...EMPTY_TDS_META });
   };
 
-  const handleSaveSessionToSupabase = async (overrideMarkers?: VideoMarker[]) => {
+  const handleSaveSessionToSupabase = async (
+    overrideMarkers?: VideoMarker[],
+    overrideTdsMeta?: Map<string, StoredTdsMeta>
+  ) => {
     const markersToSave = overrideMarkers || markers;
+    const tdsMetaToUse = overrideTdsMeta ?? markerTdsMeta;
     if (markersToSave.length === 0) return alert("No tags to save in this session.");
     setIsSavingSession(true);
     try {
@@ -635,6 +771,7 @@ function TaggingModeInner() {
           .eq("id", resumedSessionId);
         if (error) throw error;
         await supabase.from("tags").delete().eq("analysis_id", resumedSessionId);
+        await supabase.from("tds_meta").delete().eq("analysis_id", resumedSessionId);
         analysisId = resumedSessionId;
       } else {
         const { data: analysis, error } = await supabase
@@ -664,6 +801,32 @@ function TaggingModeInner() {
       );
       const { error: tagsError } = await supabase.from("tags").insert(tagRows);
       if (tagsError) throw tagsError;
+
+      // Save TDS meta rows
+      const tdsRows = markersToSave.flatMap(m => {
+        const meta = tdsMetaToUse.get(m.id);
+        if (!meta?.basicClass) return [];
+        return [{
+          analysis_id: analysisId,
+          start_time: m.startTime,
+          end_time: m.endTime ?? m.startTime,
+          basic_class: meta.basicClass,
+          meta_intro: meta.metaIntro,
+          meta_intro_type: meta.metaIntroType || null,
+          stg_naming: meta.stgNaming ? 1 : 0,
+          stg_when: meta.stgWhen ? 1 : 0,
+          stg_how: meta.stgHow ? 1 : 0,
+          stg_why: meta.stgWhy ? 1 : 0,
+          stg_when_not: meta.stgWhenNot ? 1 : 0,
+          missed_meta: meta.missedMeta,
+          mo_score: meta.moScore,
+          mo_components: meta.moComponents,
+          tds_reasoning: meta.tdReasoning || null,
+        }];
+      });
+      if (tdsRows.length > 0) {
+        await supabase.from("tds_meta").insert(tdsRows);
+      }
 
       setSessionSaved(true);
       setTimeout(() => setSessionSaved(false), 3000);
@@ -752,19 +915,36 @@ function TaggingModeInner() {
     if (markers.length === 0) return alert("No tags to export.");
     const name = sessionName.trim() || `session_${new Date().toISOString().slice(0, 10)}`;
 
-    const rows = markers.map((m, i) => ({
-      "#": i + 1,
-      "Start": formatTime(m.startTime),
-      "End": formatTime(m.endTime || m.startTime),
-      "Start (s)": m.startTime,
-      "End (s)": m.endTime || m.startTime,
-      "Codes": (m.labels ?? [m.label]).join(", "),
-      "Strength":
-        m.confidence === undefined ? "" :
-        m.confidence >= 0.8 ? "חזק" :
-        m.confidence >= 0.5 ? "בינוני" : "חלש",
-      "Evidence": m.evidence || "",
-    }));
+    const rows = markers.map((m, i) => {
+      const tds = markerTdsMeta.get(m.id);
+      return {
+        "#": i + 1,
+        "Start": formatTime(m.startTime),
+        "End": formatTime(m.endTime || m.startTime),
+        "Start (s)": m.startTime,
+        "End (s)": m.endTime || m.startTime,
+        "Codes": (m.labels ?? [m.label]).join(", "),
+        "Strength":
+          m.confidence === undefined ? "" :
+          m.confidence >= 0.8 ? "חזק" :
+          m.confidence >= 0.5 ? "בינוני" : "חלש",
+        "Evidence": m.evidence || "",
+        // TDS Meta columns
+        "TDS Class":          tds?.basicClass ?? "",
+        "META_INTRO":         tds ? (tds.metaIntro ? "כן" : "לא") : "",
+        "META_INTRO Type":    tds?.metaIntroType ?? "",
+        "שיום":               tds !== undefined ? (tds.stgNaming ? 1 : 0) : "",
+        "מתי להשתמש":        tds !== undefined ? (tds.stgWhen ? 1 : 0) : "",
+        "איך להשתמש":        tds !== undefined ? (tds.stgHow ? 1 : 0) : "",
+        "למה להשתמש":        tds !== undefined ? (tds.stgWhy ? 1 : 0) : "",
+        "מתי לא להשתמש":    tds !== undefined ? (tds.stgWhenNot ? 1 : 0) : "",
+        "META_STG Score":     tds?.metaStgScore ?? "",
+        "MISSED_META":        tds ? (tds.missedMeta === 'none' ? 'לא' : tds.missedMeta === 'partial' ? 'חלקי' : 'כן') : "",
+        "MO_SCORE":           tds?.moScore ?? "",
+        "MO Components":      tds?.moComponents?.join(", ") ?? "",
+        "TDS Reasoning":      tds?.tdReasoning ?? "",
+      };
+    });
 
     const ws = XLSX.utils.json_to_sheet(rows);
     ws["!cols"] = [
@@ -776,6 +956,19 @@ function TaggingModeInner() {
       { wch: 36 },  // Codes
       { wch: 10 },  // Strength
       { wch: 50 },  // Evidence
+      { wch: 10 },  // TDS Class
+      { wch: 12 },  // META_INTRO
+      { wch: 18 },  // META_INTRO Type
+      { wch: 8 },   // שיום
+      { wch: 14 },  // מתי להשתמש
+      { wch: 14 },  // איך להשתמש
+      { wch: 14 },  // למה להשתמש
+      { wch: 16 },  // מתי לא להשתמש
+      { wch: 14 },  // META_STG Score
+      { wch: 14 },  // MISSED_META
+      { wch: 10 },  // MO_SCORE
+      { wch: 40 },  // MO Components
+      { wch: 50 },  // TDS Reasoning
     ];
 
     const wb = XLSX.utils.book_new();
@@ -814,6 +1007,7 @@ function TaggingModeInner() {
     if (markers.length === 0) return;
     if (!confirm("Clear all tags in this session?")) return;
     setMarkers([]);
+    setMarkerTdsMeta(new Map());
     setSessionName("");
   };
 
@@ -1198,6 +1392,34 @@ function TaggingModeInner() {
                         {m.interpretation && <p className="text-xs text-foreground/60 leading-relaxed line-clamp-1" dir="rtl">{m.interpretation}</p>}
                       </div>
                     )}
+
+                    {/* TDS Meta badges */}
+                    {!isEditing && (() => {
+                      const tds = markerTdsMeta.get(m.id);
+                      if (!tds?.basicClass) return null;
+                      return (
+                        <div className="px-2.5 pb-2 flex flex-wrap gap-1 border-t border-indigo-500/20 pt-1.5">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                            tds.basicClass === 'META'    ? 'bg-emerald-500/15 text-emerald-400' :
+                            tds.basicClass === 'OVERLAP' ? 'bg-amber-500/15 text-amber-400' :
+                                                           'bg-blue-500/15 text-blue-400'
+                          }`}>{tds.basicClass}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-400 font-medium">
+                            STG {tds.metaStgScore}/5
+                          </span>
+                          {tds.metaIntro && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">
+                              META_INTRO
+                            </span>
+                          )}
+                          {tds.missedMeta !== 'none' && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                              tds.missedMeta === 'full' ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-400'
+                            }`}>MO {tds.missedMeta === 'full' ? 'מלא' : 'חלקי'} ({tds.moScore})</span>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* Inline edit form */}
                     {isEditing && editForm && (
@@ -1745,6 +1967,181 @@ function TaggingModeInner() {
                 dir="rtl"
               />
             </div>
+
+            {/* ── TDS Meta-Coding panel ─────────────────────────────────── */}
+            {hasTdsCode && (
+              <div className="space-y-3 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3">
+
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wide flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
+                    TDS Meta-Coding
+                  </h4>
+                  {suggestedBasicClass && tdsMetaForm.basicClass !== suggestedBasicClass && (
+                    <button
+                      onClick={() => setTdsMetaForm(f => ({ ...f, basicClass: suggestedBasicClass }))}
+                      className="text-[10px] text-indigo-400 border border-indigo-400/30 px-2 py-0.5 rounded hover:bg-indigo-400/10 transition-colors"
+                    >
+                      הצעה: {suggestedBasicClass}
+                    </button>
+                  )}
+                </div>
+
+                {/* Basic classification */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">סיווג בסיסי</label>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(['COG', 'OVERLAP', 'META'] as const).map(cls => {
+                      const activeStyle = {
+                        COG:     'border-blue-500/50 bg-blue-500/10 text-blue-400',
+                        OVERLAP: 'border-amber-500/50 bg-amber-500/10 text-amber-400',
+                        META:    'border-emerald-500/50 bg-emerald-500/10 text-emerald-400',
+                      }[cls];
+                      return (
+                        <button key={cls} type="button"
+                          onClick={() => setTdsMetaForm(f => ({ ...f, basicClass: cls }))}
+                          className={`py-1.5 rounded-md text-xs font-bold border transition-all ${
+                            tdsMetaForm.basicClass === cls
+                              ? activeStyle
+                              : 'border-border text-muted-foreground hover:border-primary/30 hover:text-foreground'
+                          }`}
+                        >
+                          {cls}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* META_INTRO */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">META_INTRO</label>
+                  <div className="flex gap-2">
+                    {([true, false] as const).map(val => (
+                      <button key={String(val)} type="button"
+                        onClick={() => setTdsMetaForm(f => ({ ...f, metaIntro: val, metaIntroType: val ? f.metaIntroType : '' }))}
+                        className={`flex-1 py-1.5 rounded-md text-xs font-semibold border transition-all ${
+                          tdsMetaForm.metaIntro === val
+                            ? val
+                              ? 'border-primary/50 bg-primary/10 text-primary'
+                              : 'border-border bg-secondary/40 text-muted-foreground'
+                            : 'border-border text-muted-foreground hover:border-primary/30'
+                        }`}
+                      >
+                        {val ? 'כן' : 'לא'}
+                      </button>
+                    ))}
+                  </div>
+                  {tdsMetaForm.metaIntro && (
+                    <select
+                      value={tdsMetaForm.metaIntroType}
+                      onChange={e => setTdsMetaForm(f => ({ ...f, metaIntroType: e.target.value as MetaIntroType }))}
+                      className="w-full bg-background border border-border rounded-md px-2 py-1.5 text-xs focus:outline-none focus:border-primary"
+                      dir="rtl"
+                    >
+                      <option value="">בחרי סוג META_INTRO</option>
+                      {META_INTRO_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  )}
+                </div>
+
+                {/* META_STG components */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">רכיבי META_STG</label>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                      computedTds.metaStgScore >= 4 ? 'bg-emerald-500/15 text-emerald-400' :
+                      computedTds.metaStgScore >= 2 ? 'bg-amber-500/15 text-amber-400' :
+                      'bg-secondary/50 text-muted-foreground'
+                    }`}>
+                      {computedTds.metaStgScore}/5
+                    </span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {([
+                      { key: 'stgNaming',  label: 'שיום' },
+                      { key: 'stgWhen',    label: 'מתי להשתמש' },
+                      { key: 'stgHow',     label: 'איך להשתמש' },
+                      { key: 'stgWhy',     label: 'למה להשתמש' },
+                      { key: 'stgWhenNot', label: 'מתי לא להשתמש' },
+                    ] as { key: keyof TdsMetaForm; label: string }[]).map(({ key, label }) => {
+                      const checked = !!tdsMetaForm[key];
+                      return (
+                        <label key={key}
+                          className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors ${
+                            checked ? 'bg-primary/8 border border-primary/20' : 'border border-transparent hover:bg-secondary/30'
+                          }`}
+                        >
+                          <input type="checkbox" checked={checked}
+                            onChange={e => setTdsMetaForm(f => ({ ...f, [key]: e.target.checked }))}
+                            className="w-3.5 h-3.5 accent-primary shrink-0"
+                          />
+                          <span className={`text-xs flex-1 ${checked ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
+                            {label}
+                          </span>
+                          <span className={`text-[10px] font-bold ${checked ? 'text-primary' : 'text-muted-foreground/30'}`}>
+                            {checked ? '1' : '0'}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Computed result */}
+                {(tdsMetaForm.basicClass || computedTds.missedMeta !== 'none') && (
+                  <div className="rounded-lg bg-secondary/30 border border-border/50 p-2.5 space-y-1.5 text-xs" dir="rtl">
+                    {tdsMetaForm.basicClass && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">סיווג:</span>
+                        <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                          tdsMetaForm.basicClass === 'META'    ? 'bg-emerald-500/15 text-emerald-400' :
+                          tdsMetaForm.basicClass === 'OVERLAP' ? 'bg-amber-500/15 text-amber-400' :
+                                                                  'bg-blue-500/15 text-blue-400'
+                        }`}>{tdsMetaForm.basicClass}</span>
+                      </div>
+                    )}
+                    {computedTds.missedMeta !== 'none' && (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">MISSED_META:</span>
+                          <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                            computedTds.missedMeta === 'full' ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-400'
+                          }`}>{computedTds.missedMeta === 'full' ? 'מלא' : 'חלקי'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">MO_SCORE:</span>
+                          <span className="font-bold text-orange-400">{computedTds.moScore}</span>
+                        </div>
+                        {computedTds.moComponents.length > 0 && (
+                          <div className="pt-1 border-t border-border/40 space-y-0.5">
+                            <p className="text-muted-foreground text-[10px]">רכיבים מוחמצים:</p>
+                            <p className="text-foreground/70 text-[11px] leading-relaxed">
+                              {computedTds.moComponents.join('، ')}
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* TDS Reasoning */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">נימוק TDS</label>
+                  <textarea
+                    value={tdsMetaForm.tdReasoning}
+                    onChange={e => setTdsMetaForm(f => ({ ...f, tdReasoning: e.target.value }))}
+                    rows={2}
+                    dir="rtl"
+                    placeholder="למה בחרת בסיווג זה? מה הצדיק (או לא הצדיק) META מלא?"
+                    className="w-full bg-background border border-border rounded-md px-2 py-1.5 text-xs focus:outline-none focus:border-primary resize-none"
+                  />
+                </div>
+
+              </div>
+            )}
 
           </div>
         </div>
