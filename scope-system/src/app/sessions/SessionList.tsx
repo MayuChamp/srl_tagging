@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   BookOpen, Tag, Calendar, Video, ArrowRight, Plus, X,
-  FolderInput, FolderOpen, ChevronRight, ChevronDown, List, FolderTree as FolderTreeIcon,
+  FolderInput, Folder, FolderOpen, ChevronRight, ChevronDown, List, FolderTree as FolderTreeIcon, FolderPlus,
 } from "lucide-react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
@@ -60,12 +60,23 @@ function countSessions(node: FolderNode): number {
   return node.sessions.length + Array.from(node.children.values()).reduce((sum, c) => sum + countSessions(c), 0);
 }
 
+function walkToPath(root: FolderNode, path: string[]): FolderNode {
+  let node = root;
+  let cur = "";
+  for (const segment of path) {
+    cur = cur ? `${cur}/${segment}` : segment;
+    node = node.children.get(segment) ?? { name: segment, path: cur, children: new Map(), sessions: [] };
+  }
+  return node;
+}
+
 export function SessionList({ sessions: initialSessions }: { sessions: SessionRow[] }) {
   const [sessions, setSessions] = useState<SessionRow[]>(initialSessions);
   const [viewMode, setViewMode] = useState<"flat" | "folders">("flat");
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
   const [moveFolderSessionId, setMoveFolderSessionId] = useState<string | null>(null);
-  const [moveFolderValue, setMoveFolderValue] = useState("");
+  const [moveFolderPath, setMoveFolderPath] = useState<string[]>([]);
+  const [newFolderName, setNewFolderName] = useState("");
   const [isMovingFolder, setIsMovingFolder] = useState(false);
 
   const toggleFolder = (path: string) => {
@@ -77,15 +88,14 @@ export function SessionList({ sessions: initialSessions }: { sessions: SessionRo
     });
   };
 
-  const knownFolders = Array.from(
-    new Set(sessions.map(s => s.summary_metrics?.folder_path).filter(Boolean) as string[])
-  ).sort();
+  const folderTree = useMemo(() => buildFolderTree(sessions), [sessions]);
+  const pickerNode = walkToPath(folderTree, moveFolderPath);
 
-  const handleMoveFolder = async () => {
+  const handleMoveFolder = async (targetPath: string[]) => {
     if (!moveFolderSessionId) return;
     setIsMovingFolder(true);
     try {
-      const folder_path = moveFolderValue.trim().replace(/^\/+|\/+$/g, "") || undefined;
+      const folder_path = targetPath.join("/") || undefined;
       const current = sessions.find(s => s.id === moveFolderSessionId);
       const nextMetrics = { ...(current?.summary_metrics || {}) };
       if (folder_path) nextMetrics.folder_path = folder_path;
@@ -95,7 +105,8 @@ export function SessionList({ sessions: initialSessions }: { sessions: SessionRo
       if (error) throw error;
       setSessions(prev => prev.map(s => s.id === moveFolderSessionId ? { ...s, summary_metrics: nextMetrics } : s));
       setMoveFolderSessionId(null);
-      setMoveFolderValue("");
+      setMoveFolderPath([]);
+      setNewFolderName("");
     } catch { alert("Failed to move session."); }
     finally { setIsMovingFolder(false); }
   };
@@ -167,7 +178,11 @@ export function SessionList({ sessions: initialSessions }: { sessions: SessionRo
           {/* Actions */}
           <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={() => { setMoveFolderSessionId(session.id); setMoveFolderValue(session.summary_metrics?.folder_path || ""); }}
+              onClick={() => {
+                setMoveFolderSessionId(session.id);
+                setMoveFolderPath((session.summary_metrics?.folder_path || "").split("/").map(s => s.trim()).filter(Boolean));
+                setNewFolderName("");
+              }}
               title="Move to folder"
               className="text-muted-foreground hover:text-foreground bg-secondary hover:bg-secondary/80 p-2 rounded-xl transition-all border border-border"
             >
@@ -227,35 +242,83 @@ export function SessionList({ sessions: initialSessions }: { sessions: SessionRo
 
   return (
     <>
-      {moveFolderSessionId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !isMovingFolder && setMoveFolderSessionId(null)} />
-          <div className="relative z-10 w-full max-w-md mx-4 bg-card border border-border rounded-2xl shadow-[var(--shadow-lg)] overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <h2 className="font-semibold text-base flex items-center gap-2"><FolderInput size={16} className="text-primary" /> Move to Folder</h2>
-              <button onClick={() => setMoveFolderSessionId(null)} disabled={isMovingFolder} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-secondary text-muted-foreground transition-all"><X size={16} /></button>
-            </div>
-            <div className="p-5 space-y-3">
-              <p className="text-sm text-muted-foreground">Use &quot;/&quot; to nest folders. Leave blank to uncategorize.</p>
-              <input type="text" value={moveFolderValue} onChange={e => setMoveFolderValue(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleMoveFolder()}
-                placeholder="e.g. Class A/Lesson 1"
-                list="known-session-folders"
-                className="w-full bg-secondary/60 border border-border rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
-                autoFocus />
-              <datalist id="known-session-folders">
-                {knownFolders.map(f => <option key={f} value={f} />)}
-              </datalist>
-            </div>
-            <div className="flex gap-2 px-5 pb-5">
-              <button onClick={() => setMoveFolderSessionId(null)} disabled={isMovingFolder} className="flex-1 px-4 py-2.5 text-sm rounded-xl border border-border hover:bg-secondary transition-all disabled:opacity-50">Cancel</button>
-              <button onClick={handleMoveFolder} disabled={isMovingFolder} className="flex-1 px-4 py-2.5 text-sm rounded-xl bg-primary text-white hover:bg-primary/90 flex items-center justify-center gap-2 disabled:opacity-50">
-                <FolderInput size={14} />{isMovingFolder ? "Moving…" : "Move"}
-              </button>
+      {moveFolderSessionId && (() => {
+        const childFolders = Array.from(pickerNode.children.values()).sort((a, b) => a.name.localeCompare(b.name));
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !isMovingFolder && setMoveFolderSessionId(null)} />
+            <div className="relative z-10 w-full max-w-md mx-4 bg-card border border-border rounded-2xl shadow-[var(--shadow-lg)] overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+                <h2 className="font-semibold text-base flex items-center gap-2"><FolderInput size={16} className="text-primary" /> Move to Folder</h2>
+                <button onClick={() => setMoveFolderSessionId(null)} disabled={isMovingFolder} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-secondary text-muted-foreground transition-all"><X size={16} /></button>
+              </div>
+
+              {/* Breadcrumb */}
+              <div className="flex items-center gap-1 flex-wrap px-5 pt-4 text-sm">
+                <button onClick={() => setMoveFolderPath([])}
+                  className={`px-2 py-1 rounded-md transition-colors ${moveFolderPath.length === 0 ? "text-primary font-semibold" : "text-muted-foreground hover:bg-secondary"}`}>
+                  Root
+                </button>
+                {moveFolderPath.map((segment, i) => (
+                  <span key={i} className="flex items-center gap-1">
+                    <ChevronRight size={13} className="text-muted-foreground/50" />
+                    <button onClick={() => setMoveFolderPath(moveFolderPath.slice(0, i + 1))}
+                      className={`px-2 py-1 rounded-md transition-colors ${i === moveFolderPath.length - 1 ? "text-primary font-semibold" : "text-muted-foreground hover:bg-secondary"}`}>
+                      {segment}
+                    </button>
+                  </span>
+                ))}
+              </div>
+
+              {/* Subfolders at this level */}
+              <div className="px-5 pt-2 pb-1 max-h-56 overflow-y-auto">
+                {childFolders.length === 0 ? (
+                  <p className="text-xs text-muted-foreground/60 py-3">No subfolders here yet.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {childFolders.map(child => (
+                      <button key={child.name} onClick={() => setMoveFolderPath([...moveFolderPath, child.name])}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-secondary/60 transition-colors text-left text-sm">
+                        <Folder size={14} className="text-muted-foreground shrink-0" />
+                        <span className="flex-1 truncate">{child.name}</span>
+                        <span className="text-xs text-muted-foreground">{countSessions(child)}</span>
+                        <ChevronRight size={13} className="text-muted-foreground/50 shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Create subfolder at this level */}
+              <div className="px-5 py-3 flex gap-2 border-t border-border">
+                <input type="text" value={newFolderName} onChange={e => setNewFolderName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && newFolderName.trim()) {
+                      setMoveFolderPath([...moveFolderPath, newFolderName.trim()]);
+                      setNewFolderName("");
+                    }
+                  }}
+                  placeholder="New subfolder name…"
+                  className="flex-1 bg-secondary/60 border border-border rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30" />
+                <button
+                  onClick={() => { if (newFolderName.trim()) { setMoveFolderPath([...moveFolderPath, newFolderName.trim()]); setNewFolderName(""); } }}
+                  disabled={!newFolderName.trim()}
+                  title="Create and enter subfolder"
+                  className="px-3 rounded-xl border border-border hover:bg-secondary transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                  <FolderPlus size={15} />
+                </button>
+              </div>
+
+              <div className="flex gap-2 px-5 pb-5">
+                <button onClick={() => setMoveFolderSessionId(null)} disabled={isMovingFolder} className="flex-1 px-4 py-2.5 text-sm rounded-xl border border-border hover:bg-secondary transition-all disabled:opacity-50">Cancel</button>
+                <button onClick={() => handleMoveFolder(moveFolderPath)} disabled={isMovingFolder} className="flex-1 px-4 py-2.5 text-sm rounded-xl bg-primary text-white hover:bg-primary/90 flex items-center justify-center gap-2 disabled:opacity-50">
+                  <FolderInput size={14} />{isMovingFolder ? "Moving…" : moveFolderPath.length === 0 ? "Move to Root" : `Move Here`}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Empty state */}
       {sessions.length === 0 ? (
