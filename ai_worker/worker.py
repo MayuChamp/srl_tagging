@@ -20,7 +20,7 @@ if _missing:
 # Delayed import — main.py calls genai.Client() at module load, needs GEMINI_API_KEY set first
 from main import process_pending_videos
 
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL_SECONDS", "15"))
+POLL_INTERVAL = int(os.getenv("POLL_INTERVAL_SECONDS", "60"))
 
 print(f"AI Worker started — polling every {POLL_INTERVAL}s for pending videos...")
 while True:

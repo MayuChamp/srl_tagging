@@ -19,6 +19,7 @@ interface LibraryVideo {
   storage_path: string;
   duration_seconds: number | null;
   created_at: string | null;
+  folder_path: string | null;
 }
 
 interface AiTag {
@@ -40,6 +41,24 @@ interface AiEvent {
   evidence_text: string | null;
   reasoning: string | null;
   confidence_score: number | null;
+  tdsMeta?: StoredTdsMeta;
+}
+
+interface AiTdsMetaRow {
+  start_time: number;
+  end_time: number;
+  basic_class: string | null;
+  meta_intro: boolean;
+  meta_intro_type: string | null;
+  stg_naming: number;
+  stg_when: number;
+  stg_how: number;
+  stg_why: number;
+  stg_when_not: number;
+  missed_meta: string;
+  mo_score: number | null;
+  mo_components: string[] | null;
+  tds_reasoning: string | null;
 }
 
 // ── TDS Meta-Coding layer ────────────────────────────────────────────────────
@@ -114,6 +133,25 @@ function computeTdsMeta(f: TdsMetaForm): StoredTdsMeta {
   }
 
   return { ...f, metaStgScore: score, missedMeta, moScore, moComponents };
+}
+
+function aiTdsRowToStoredMeta(row: AiTdsMetaRow): StoredTdsMeta {
+  const score = row.stg_naming + row.stg_when + row.stg_how + row.stg_why + row.stg_when_not;
+  return {
+    basicClass: (row.basic_class as 'COG' | 'OVERLAP' | 'META' | null) ?? null,
+    metaIntro: row.meta_intro,
+    metaIntroType: (row.meta_intro_type ?? '') as MetaIntroType,
+    stgNaming: !!row.stg_naming,
+    stgWhen: !!row.stg_when,
+    stgHow: !!row.stg_how,
+    stgWhy: !!row.stg_why,
+    stgWhenNot: !!row.stg_when_not,
+    tdReasoning: row.tds_reasoning ?? '',
+    metaStgScore: score,
+    missedMeta: (row.missed_meta as 'none' | 'partial' | 'full') ?? 'none',
+    moScore: row.mo_score ?? 0,
+    moComponents: row.mo_components ?? [],
+  };
 }
 
 const PRISMS = {
@@ -210,6 +248,241 @@ const PRISM_CODE_LOOKUP = Object.fromEntries(
   Object.values(PRISMS).flat().map(c => [c.id, c])
 );
 
+// ── STG item definitions ────────────────────────────────────────────────────
+const STG_ITEMS = [
+  { key: 'stgNaming'  as keyof TdsMetaForm, label: 'שיום',           shortcut: '1', tip: '"זו אסטרטגיה של השוואה" / "עכשיו השתמשנו בשיטת הצבה"' },
+  { key: 'stgWhen'    as keyof TdsMetaForm, label: 'מתי להשתמש',    shortcut: '2', tip: '"כדאי להשתמש כשיש שני מקרים ורוצים להבין מה שונה ביניהם"' },
+  { key: 'stgHow'     as keyof TdsMetaForm, label: 'איך להשתמש',    shortcut: '3', tip: '"קודם מזהים מטרה, אח״כ בוחרים דרך, ובסוף בודקים"' },
+  { key: 'stgWhy'     as keyof TdsMetaForm, label: 'למה להשתמש',    shortcut: '4', tip: '"עוזרת לא להתבלבל בין פרטים חשובים לפחות חשובים"' },
+  { key: 'stgWhenNot' as keyof TdsMetaForm, label: 'מתי לא להשתמש', shortcut: '5', tip: '"אם אין שני דברים להשוות — לא מתאים"' },
+] as const;
+
+// ── TdsMetaPanel ────────────────────────────────────────────────────────────
+function TdsMetaPanel({
+  form,
+  onChange,
+}: {
+  form: TdsMetaForm;
+  onChange: React.Dispatch<React.SetStateAction<TdsMetaForm>>;
+}) {
+  const computed = computeTdsMeta(form);
+  const [hoveredTip, setHoveredTip] = useState<string | null>(null);
+
+  // Auto-set basicClass to OVERLAP when stgNaming=true and all other STG are false
+  useEffect(() => {
+    if (form.stgNaming && !form.stgWhen && !form.stgHow && !form.stgWhy && !form.stgWhenNot) {
+      onChange(f => f.basicClass === 'OVERLAP' ? f : { ...f, basicClass: 'OVERLAP' });
+    }
+  }, [form.stgNaming, form.stgWhen, form.stgHow, form.stgWhy, form.stgWhenNot]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="space-y-3 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3">
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wide flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
+          TDS Meta-Coding
+        </h4>
+      </div>
+
+      {/* META_INTRO */}
+      <div className="space-y-1.5">
+        <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">META_INTRO</label>
+        <div className="flex gap-2">
+          {([true, false] as const).map(val => (
+            <button key={String(val)} type="button"
+              onClick={() => onChange(f => ({ ...f, metaIntro: val, metaIntroType: val ? f.metaIntroType : '' }))}
+              className={`flex-1 py-1.5 rounded-md text-xs font-semibold border transition-all ${
+                form.metaIntro === val
+                  ? val
+                    ? 'border-primary/50 bg-primary/10 text-primary'
+                    : 'border-border bg-secondary/40 text-muted-foreground'
+                  : 'border-border text-muted-foreground hover:border-primary/30'
+              }`}
+            >
+              {val ? 'כן' : 'לא'}
+            </button>
+          ))}
+        </div>
+        {form.metaIntro && (
+          <select
+            value={form.metaIntroType}
+            onChange={e => onChange(f => ({ ...f, metaIntroType: e.target.value as MetaIntroType }))}
+            className="w-full bg-background border border-border rounded-md px-2 py-1.5 text-xs focus:outline-none focus:border-primary"
+            dir="rtl"
+          >
+            <option value="">בחרי סוג META_INTRO</option>
+            {META_INTRO_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        )}
+      </div>
+
+      {/* META_STG components */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+            רכיבי META_STG
+          </label>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] text-muted-foreground/40 font-mono">1–5</span>
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+              computed.metaStgScore >= 4 ? 'bg-emerald-500/15 text-emerald-400' :
+              computed.metaStgScore >= 2 ? 'bg-amber-500/15 text-amber-400' :
+              'bg-secondary/50 text-muted-foreground'
+            }`}>
+              {computed.metaStgScore}/5
+            </span>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="flex gap-0.5 h-1.5">
+          {[0,1,2,3,4].map(i => (
+            <div key={i} className={`flex-1 rounded-sm transition-colors ${
+              i < computed.metaStgScore
+                ? computed.metaStgScore >= 4 ? 'bg-emerald-400' :
+                  computed.metaStgScore >= 2 ? 'bg-amber-400' : 'bg-red-400/80'
+                : 'bg-secondary/40'
+            }`} />
+          ))}
+        </div>
+
+        <div className="space-y-0.5">
+          {STG_ITEMS.map((item, idx) => {
+            const checked = !!form[item.key];
+            const isNamingOnly = item.key === 'stgNaming' && form.stgNaming && !form.stgWhen && !form.stgHow && !form.stgWhy && !form.stgWhenNot;
+            return (
+              <React.Fragment key={item.key}>
+                {idx === 1 && (
+                  <div className="flex items-center gap-2 my-0.5">
+                    <div className="flex-1 border-t border-border/40" />
+                    <span className="text-[9px] text-muted-foreground/40">הסבר</span>
+                    <div className="flex-1 border-t border-border/40" />
+                  </div>
+                )}
+                <label
+                  className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors ${
+                    checked ? 'bg-primary/8 border border-primary/20' : 'border border-transparent hover:bg-secondary/30'
+                  }`}
+                >
+                  <input type="checkbox" checked={checked}
+                    onChange={e => onChange(f => ({ ...f, [item.key]: e.target.checked }))}
+                    className="w-3.5 h-3.5 accent-primary shrink-0"
+                  />
+                  <span className={`text-xs flex-1 ${checked ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
+                    {item.label}
+                    {isNamingOnly && (
+                      <span className="text-[9px] text-amber-400/70 mr-1"> ← בלעדי = OVERLAP</span>
+                    )}
+                  </span>
+                  <span className={`text-[10px] font-bold ${checked ? 'text-primary' : 'text-muted-foreground/30'}`}>
+                    {checked ? '1' : '0'}
+                  </span>
+                  <button type="button"
+                    onMouseEnter={() => setHoveredTip(item.tip)}
+                    onMouseLeave={() => setHoveredTip(null)}
+                    onClick={e => e.preventDefault()}
+                    className="shrink-0 text-[11px] text-muted-foreground/30 hover:text-muted-foreground/70 transition-colors leading-none"
+                  >ⓘ</button>
+                </label>
+              </React.Fragment>
+            );
+          })}
+        </div>
+
+        {/* Tooltip */}
+        {hoveredTip && (
+          <div className="rounded-lg bg-slate-900/90 border border-slate-700/60 px-3 py-2 text-[11px] text-slate-300 leading-relaxed" dir="rtl">
+            {hoveredTip}
+          </div>
+        )}
+      </div>
+
+      {/* Basic Classification */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">סיווג בסיסי</label>
+          <span className="text-[9px] text-muted-foreground/40 font-mono">c/o/m</span>
+        </div>
+        <div className="grid grid-cols-3 gap-1">
+          {(['COG', 'OVERLAP', 'META'] as const).map(cls => {
+            const activeStyle = {
+              COG:     'border-blue-500/50 bg-blue-500/10 text-blue-400',
+              OVERLAP: 'border-amber-500/50 bg-amber-500/10 text-amber-400',
+              META:    'border-emerald-500/50 bg-emerald-500/10 text-emerald-400',
+            }[cls];
+            return (
+              <button key={cls} type="button"
+                onClick={() => onChange(f => ({ ...f, basicClass: cls }))}
+                className={`py-1.5 rounded-md text-xs font-bold border transition-all ${
+                  form.basicClass === cls
+                    ? activeStyle
+                    : 'border-border text-muted-foreground hover:border-primary/30 hover:text-foreground'
+                }`}
+              >
+                {cls}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Computed result */}
+      {(form.basicClass || computed.missedMeta !== 'none') && (
+        <div className="rounded-lg bg-secondary/30 border border-border/50 p-2.5 space-y-1.5 text-xs" dir="rtl">
+          {form.basicClass && (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">סיווג:</span>
+              <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                form.basicClass === 'META'    ? 'bg-emerald-500/15 text-emerald-400' :
+                form.basicClass === 'OVERLAP' ? 'bg-amber-500/15 text-amber-400' :
+                                                'bg-blue-500/15 text-blue-400'
+              }`}>{form.basicClass}</span>
+            </div>
+          )}
+          {computed.missedMeta !== 'none' && (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">MISSED_META:</span>
+                <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                  computed.missedMeta === 'full' ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-400'
+                }`}>{computed.missedMeta === 'full' ? 'מלא' : 'חלקי'}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">MO_SCORE:</span>
+                <span className="font-bold text-orange-400">{computed.moScore}</span>
+              </div>
+              {computed.moComponents.length > 0 && (
+                <div className="pt-1 border-t border-border/40 space-y-0.5">
+                  <p className="text-muted-foreground text-[10px]">רכיבים מוחמצים:</p>
+                  <p className="text-foreground/70 text-[11px] leading-relaxed">
+                    {computed.moComponents.join('، ')}
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* TDS Reasoning */}
+      <div className="space-y-1.5">
+        <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">נימוק TDS</label>
+        <textarea
+          value={form.tdReasoning}
+          onChange={e => onChange(f => ({ ...f, tdReasoning: e.target.value }))}
+          rows={2}
+          dir="rtl"
+          placeholder="למה בחרת בסיווג זה? מה הצדיק (או לא הצדיק) META מלא?"
+          className="w-full bg-background border border-border rounded-md px-2 py-1.5 text-xs focus:outline-none focus:border-primary resize-none"
+        />
+      </div>
+
+    </div>
+  );
+}
+
 const PRISM_LABELS: Record<PrismKey, string> = {
   SCOPE: "SCOPE",
   NONVERBAL: "Nonverbal",
@@ -234,6 +507,7 @@ function TaggingModeInner() {
   const [libraryVideos, setLibraryVideos] = useState<LibraryVideo[]>([]);
   const [loadingLibrary, setLoadingLibrary] = useState(false);
   const [librarySearch, setLibrarySearch] = useState("");
+  const [libraryViewMode, setLibraryViewMode] = useState<"recent" | "folders">("recent");
 
   const [captions, setCaptions] = useState<Caption[]>([]);
 
@@ -270,6 +544,7 @@ function TaggingModeInner() {
   // Tag editing state
   const [editingMarkerId, setEditingMarkerId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<{ startTime: number | ""; endTime: number | ""; evidence: string; reasoning: string } | null>(null);
+  const [editTdsMeta, setEditTdsMeta] = useState<TdsMetaForm | null>(null);
 
   // Video seek state
   const [seekRequest, setSeekRequest] = useState<{ time: number; seq: number } | null>(null);
@@ -287,6 +562,7 @@ function TaggingModeInner() {
   const [aiStatus, setAiStatus] = useState<"idle" | "processing" | "completed" | "failed">("idle");
   const [aiTags, setAiTags] = useState<AiTag[]>([]);
   const [acceptedAiKeys, setAcceptedAiKeys] = useState<Set<string>>(() => new Set());
+  const [aiTdsMeta, setAiTdsMeta] = useState<Map<string, StoredTdsMeta>>(new Map());
 
   // Group flat tag rows into events (one card per timestamp)
   const aiEvents = useMemo<AiEvent[]>(() => {
@@ -303,6 +579,7 @@ function TaggingModeInner() {
           evidence_text: tag.evidence_text,
           reasoning: tag.reasoning,
           confidence_score: tag.confidence_score,
+          tdsMeta: aiTdsMeta.get(key),
         });
       }
       const ev = map.get(key)!;
@@ -310,7 +587,7 @@ function TaggingModeInner() {
       ev.code_ids.push(tag.code_id);
     }
     return [...map.values()];
-  }, [aiTags]);
+  }, [aiTags, aiTdsMeta]);
   const [processingStartedAt, setProcessingStartedAt] = useState<number | null>(null);
 
   // TDS Meta-Coding state
@@ -322,17 +599,18 @@ function TaggingModeInner() {
     () => [...selectedCodes].some(c => c.startsWith('TDS_')),
     [selectedCodes]
   );
-  const computedTds = useMemo(() => computeTdsMeta(tdsMetaForm), [tdsMetaForm]);
-  const suggestedBasicClass = useMemo((): 'COG' | 'OVERLAP' | 'META' | null => {
-    const { stgNaming, stgWhen, stgHow, stgWhy, stgWhenNot } = tdsMetaForm;
-    const hasNonNaming = stgWhen || stgHow || stgWhy || stgWhenNot;
-    if (stgNaming && !hasNonNaming) return 'OVERLAP';
-    if (hasNonNaming) return 'META';
-    return null;
-  }, [tdsMetaForm]);
 
   const seekToTime = (time: number) => {
     setSeekRequest(prev => ({ time, seq: (prev?.seq ?? 0) + 1 }));
+  };
+
+  const applyAiTdsMeta = (rows: AiTdsMetaRow[]) => {
+    if (!rows.length) return;
+    const m = new Map<string, StoredTdsMeta>();
+    for (const row of rows) {
+      m.set(`${row.start_time}|${row.end_time}`, aiTdsRowToStoredMeta(row));
+    }
+    setAiTdsMeta(m);
   };
 
   // Load existing AI analysis when a library video is selected
@@ -340,6 +618,7 @@ function TaggingModeInner() {
     if (!loadedVideoId) {
       setAiStatus("idle");
       setAiTags([]);
+      setAiTdsMeta(new Map());
       setAcceptedAiKeys(new Set());
       setAudioTranscript(null);
       return;
@@ -351,6 +630,7 @@ function TaggingModeInner() {
         if (data.status === "completed" && data.tags?.length) {
           setAiStatus("completed");
           setAiTags(data.tags);
+          applyAiTdsMeta(data.tds_meta ?? []);
         } else if (data.status === "processing" || data.status === "pending") {
           setAiStatus("processing");
         }
@@ -358,7 +638,7 @@ function TaggingModeInner() {
         // network error — keep idle
       }
     })();
-  }, [loadedVideoId]);
+  }, [loadedVideoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll for status while processing
   useEffect(() => {
@@ -370,6 +650,7 @@ function TaggingModeInner() {
         if (data.status === "completed") {
           setAiStatus("completed");
           setAiTags(data.tags ?? []);
+          applyAiTdsMeta(data.tds_meta ?? []);
           setRightTab("AI");
         } else if (data.status === "failed") {
           setAiStatus("failed");
@@ -377,7 +658,28 @@ function TaggingModeInner() {
       } catch { /* keep polling */ }
     }, 5000);
     return () => clearInterval(id);
-  }, [aiStatus, loadedVideoId]);
+  }, [aiStatus, loadedVideoId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keyboard shortcuts for TDS meta coding
+  useEffect(() => {
+    if (!hasTdsCode || rightTab === 'AI') return;
+    const handler = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return;
+      switch (e.key) {
+        case 'c': case 'C': setTdsMetaForm(f => ({ ...f, basicClass: 'COG' }));     break;
+        case 'o': case 'O': setTdsMetaForm(f => ({ ...f, basicClass: 'OVERLAP' })); break;
+        case 'm': case 'M': setTdsMetaForm(f => ({ ...f, basicClass: 'META' }));    break;
+        case '1': setTdsMetaForm(f => ({ ...f, stgNaming:  !f.stgNaming }));  break;
+        case '2': setTdsMetaForm(f => ({ ...f, stgWhen:    !f.stgWhen }));    break;
+        case '3': setTdsMetaForm(f => ({ ...f, stgHow:     !f.stgHow }));     break;
+        case '4': setTdsMetaForm(f => ({ ...f, stgWhy:     !f.stgWhy }));     break;
+        case '5': setTdsMetaForm(f => ({ ...f, stgWhenNot: !f.stgWhenNot })); break;
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [hasTdsCode, rightTab]);
 
   const handleTriggerAnalysis = async () => {
     if (!loadedVideoId) return;
@@ -421,6 +723,9 @@ function TaggingModeInner() {
     };
     setMarkers(prev => [...prev, newMarker]);
     setAcceptedAiKeys(prev => new Set([...prev, event.key]));
+    if (event.tdsMeta) {
+      setMarkerTdsMeta(prev => { const n = new Map(prev); n.set(newMarker.id, event.tdsMeta!); return n; });
+    }
   };
 
   const handleAcceptAllAiEvents = () => {
@@ -439,6 +744,13 @@ function TaggingModeInner() {
     }));
     setMarkers(prev => [...prev, ...newMarkers]);
     setAcceptedAiKeys(prev => new Set([...prev, ...pending.map(e => e.key)]));
+    if (pending.some(e => e.tdsMeta)) {
+      setMarkerTdsMeta(prev => {
+        const n = new Map(prev);
+        pending.forEach((event, i) => { if (event.tdsMeta) n.set(newMarkers[i].id, event.tdsMeta!); });
+        return n;
+      });
+    }
   };
 
   const handleEditStart = (m: VideoMarker) => {
@@ -449,6 +761,8 @@ function TaggingModeInner() {
       evidence: m.evidence ?? "",
       reasoning: m.reasoning ?? "",
     });
+    const existingMeta = markerTdsMeta.get(m.id);
+    setEditTdsMeta(existingMeta ? { ...existingMeta } : null);
   };
 
   const handleEditSave = (id: string) => {
@@ -460,6 +774,14 @@ function TaggingModeInner() {
       evidence: editForm.evidence,
       reasoning: editForm.reasoning || undefined,
     }));
+    if (editTdsMeta?.basicClass) {
+      setMarkerTdsMeta(prev => {
+        const n = new Map(prev);
+        n.set(id, computeTdsMeta(editTdsMeta));
+        return n;
+      });
+    }
+    setEditTdsMeta(null);
     setEditingMarkerId(null);
     setEditForm(null);
   };
@@ -1016,7 +1338,7 @@ function TaggingModeInner() {
     setLoadingLibrary(true);
     const { data } = await supabase
       .from("videos")
-      .select("id, title, storage_path, duration_seconds, created_at")
+      .select("id, title, storage_path, duration_seconds, created_at, folder_path")
       .order("created_at", { ascending: false });
     setLibraryVideos((data as LibraryVideo[]) || []);
     setLoadingLibrary(false);
@@ -1034,6 +1356,25 @@ function TaggingModeInner() {
   const filteredLibrary = librarySearch.trim()
     ? libraryVideos.filter(v => (v.title || "").toLowerCase().includes(librarySearch.toLowerCase()))
     : libraryVideos;
+
+  const groupedLibrary = useMemo(() => {
+    const groups = new Map<string, LibraryVideo[]>();
+    for (const video of filteredLibrary) {
+      const folder = video.folder_path || "";
+      if (!groups.has(folder)) groups.set(folder, []);
+      groups.get(folder)!.push(video);
+    }
+    return Array.from(groups.entries())
+      .sort(([a], [b]) => {
+        if (!a) return 1;
+        if (!b) return -1;
+        return a.localeCompare(b);
+      })
+      .map(([folder, vids]) => ({
+        folder,
+        videos: vids.slice().sort((a, b) => (a.title || "").localeCompare(b.title || "")),
+      }));
+  }, [filteredLibrary]);
 
   // Build visible categories with resolved code objects, applying search filter
   const visibleCategories = useMemo(() => {
@@ -1103,7 +1444,7 @@ function TaggingModeInner() {
                 <X size={20} />
               </button>
             </div>
-            <div className="p-4 border-b border-border">
+            <div className="p-4 border-b border-border space-y-3">
               <div className="relative">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
@@ -1112,6 +1453,16 @@ function TaggingModeInner() {
                   placeholder="Search videos..."
                   className="w-full bg-background border border-border rounded-md pl-8 pr-3 py-2 text-sm focus:outline-none focus:border-primary"
                 />
+              </div>
+              <div className="flex rounded-md border border-border overflow-hidden w-fit text-xs font-medium">
+                <button onClick={() => setLibraryViewMode("recent")}
+                  className={`px-3 py-1.5 transition-colors ${libraryViewMode === "recent" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary/40"}`}>
+                  Recent
+                </button>
+                <button onClick={() => setLibraryViewMode("folders")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${libraryViewMode === "folders" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary/40"}`}>
+                  <FolderOpen size={12} /> By Folder
+                </button>
               </div>
             </div>
             <div className="overflow-y-auto flex-1 p-2">
@@ -1122,6 +1473,31 @@ function TaggingModeInner() {
                   <Video size={36} className="opacity-30" />
                   <p className="text-sm">{librarySearch ? "No videos match your search." : "No videos in library yet."}</p>
                 </div>
+              ) : libraryViewMode === "folders" ? (
+                groupedLibrary.map(({ folder, videos }) => (
+                  <div key={folder || "__uncategorized__"} className="mb-3">
+                    <p className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                      <FolderOpen size={12} /> {folder || "Uncategorized"}
+                    </p>
+                    {videos.map(video => (
+                      <button key={video.id} onClick={() => handleSelectLibraryVideo(video)}
+                        className="w-full flex items-center gap-4 p-3 rounded-lg hover:bg-secondary/40 transition-colors text-left"
+                      >
+                        <div className="w-10 h-10 bg-primary/10 rounded-md flex items-center justify-center shrink-0">
+                          <Video size={18} className="text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">{video.title || "Untitled Video"}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {video.duration_seconds ? `${Math.floor(video.duration_seconds / 60)}:${String(video.duration_seconds % 60).padStart(2, "0")}` : "—"}
+                            {video.created_at ? ` · ${new Date(video.created_at).toLocaleDateString()}` : ""}
+                          </p>
+                        </div>
+                        <span className="text-xs text-primary font-medium shrink-0">Load</span>
+                      </button>
+                    ))}
+                  </div>
+                ))
               ) : (
                 filteredLibrary.map(video => (
                   <button key={video.id} onClick={() => handleSelectLibraryVideo(video)}
@@ -1135,6 +1511,7 @@ function TaggingModeInner() {
                       <p className="text-xs text-muted-foreground">
                         {video.duration_seconds ? `${Math.floor(video.duration_seconds / 60)}:${String(video.duration_seconds % 60).padStart(2, "0")}` : "—"}
                         {video.created_at ? ` · ${new Date(video.created_at).toLocaleDateString()}` : ""}
+                        {video.folder_path ? ` · ${video.folder_path}` : ""}
                       </p>
                     </div>
                     <span className="text-xs text-primary font-medium shrink-0">Load</span>
@@ -1363,7 +1740,7 @@ function TaggingModeInner() {
                         )}
                         {/* Edit button */}
                         <button
-                          onClick={e => { e.stopPropagation(); isEditing ? setEditingMarkerId(null) : handleEditStart(m); }}
+                          onClick={e => { e.stopPropagation(); if (isEditing) { setEditingMarkerId(null); setEditTdsMeta(null); } else { handleEditStart(m); } }}
                           title={isEditing ? "Cancel edit" : "Edit tag"}
                           className={`shrink-0 transition-colors ${isEditing ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
                         >
@@ -1470,6 +1847,13 @@ function TaggingModeInner() {
                             className="w-full bg-background border border-border rounded px-2 py-1 text-xs focus:outline-none focus:border-primary resize-none mt-0.5"
                           />
                         </div>
+                        {/* TDS Meta panel in edit form */}
+                        {((m.labels ?? [m.label]).some(l => l.startsWith('TDS_'))) && (
+                          <TdsMetaPanel
+                            form={editTdsMeta ?? EMPTY_TDS_META}
+                            onChange={setEditTdsMeta as React.Dispatch<React.SetStateAction<TdsMetaForm>>}
+                          />
+                        )}
                         {/* Save button */}
                         <button
                           onClick={() => handleEditSave(m.id)}
@@ -1970,177 +2354,7 @@ function TaggingModeInner() {
 
             {/* ── TDS Meta-Coding panel ─────────────────────────────────── */}
             {hasTdsCode && (
-              <div className="space-y-3 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3">
-
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wide flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
-                    TDS Meta-Coding
-                  </h4>
-                  {suggestedBasicClass && tdsMetaForm.basicClass !== suggestedBasicClass && (
-                    <button
-                      onClick={() => setTdsMetaForm(f => ({ ...f, basicClass: suggestedBasicClass }))}
-                      className="text-[10px] text-indigo-400 border border-indigo-400/30 px-2 py-0.5 rounded hover:bg-indigo-400/10 transition-colors"
-                    >
-                      הצעה: {suggestedBasicClass}
-                    </button>
-                  )}
-                </div>
-
-                {/* Basic classification */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">סיווג בסיסי</label>
-                  <div className="grid grid-cols-3 gap-1">
-                    {(['COG', 'OVERLAP', 'META'] as const).map(cls => {
-                      const activeStyle = {
-                        COG:     'border-blue-500/50 bg-blue-500/10 text-blue-400',
-                        OVERLAP: 'border-amber-500/50 bg-amber-500/10 text-amber-400',
-                        META:    'border-emerald-500/50 bg-emerald-500/10 text-emerald-400',
-                      }[cls];
-                      return (
-                        <button key={cls} type="button"
-                          onClick={() => setTdsMetaForm(f => ({ ...f, basicClass: cls }))}
-                          className={`py-1.5 rounded-md text-xs font-bold border transition-all ${
-                            tdsMetaForm.basicClass === cls
-                              ? activeStyle
-                              : 'border-border text-muted-foreground hover:border-primary/30 hover:text-foreground'
-                          }`}
-                        >
-                          {cls}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* META_INTRO */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">META_INTRO</label>
-                  <div className="flex gap-2">
-                    {([true, false] as const).map(val => (
-                      <button key={String(val)} type="button"
-                        onClick={() => setTdsMetaForm(f => ({ ...f, metaIntro: val, metaIntroType: val ? f.metaIntroType : '' }))}
-                        className={`flex-1 py-1.5 rounded-md text-xs font-semibold border transition-all ${
-                          tdsMetaForm.metaIntro === val
-                            ? val
-                              ? 'border-primary/50 bg-primary/10 text-primary'
-                              : 'border-border bg-secondary/40 text-muted-foreground'
-                            : 'border-border text-muted-foreground hover:border-primary/30'
-                        }`}
-                      >
-                        {val ? 'כן' : 'לא'}
-                      </button>
-                    ))}
-                  </div>
-                  {tdsMetaForm.metaIntro && (
-                    <select
-                      value={tdsMetaForm.metaIntroType}
-                      onChange={e => setTdsMetaForm(f => ({ ...f, metaIntroType: e.target.value as MetaIntroType }))}
-                      className="w-full bg-background border border-border rounded-md px-2 py-1.5 text-xs focus:outline-none focus:border-primary"
-                      dir="rtl"
-                    >
-                      <option value="">בחרי סוג META_INTRO</option>
-                      {META_INTRO_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  )}
-                </div>
-
-                {/* META_STG components */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">רכיבי META_STG</label>
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                      computedTds.metaStgScore >= 4 ? 'bg-emerald-500/15 text-emerald-400' :
-                      computedTds.metaStgScore >= 2 ? 'bg-amber-500/15 text-amber-400' :
-                      'bg-secondary/50 text-muted-foreground'
-                    }`}>
-                      {computedTds.metaStgScore}/5
-                    </span>
-                  </div>
-                  <div className="space-y-0.5">
-                    {([
-                      { key: 'stgNaming',  label: 'שיום' },
-                      { key: 'stgWhen',    label: 'מתי להשתמש' },
-                      { key: 'stgHow',     label: 'איך להשתמש' },
-                      { key: 'stgWhy',     label: 'למה להשתמש' },
-                      { key: 'stgWhenNot', label: 'מתי לא להשתמש' },
-                    ] as { key: keyof TdsMetaForm; label: string }[]).map(({ key, label }) => {
-                      const checked = !!tdsMetaForm[key];
-                      return (
-                        <label key={key}
-                          className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors ${
-                            checked ? 'bg-primary/8 border border-primary/20' : 'border border-transparent hover:bg-secondary/30'
-                          }`}
-                        >
-                          <input type="checkbox" checked={checked}
-                            onChange={e => setTdsMetaForm(f => ({ ...f, [key]: e.target.checked }))}
-                            className="w-3.5 h-3.5 accent-primary shrink-0"
-                          />
-                          <span className={`text-xs flex-1 ${checked ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
-                            {label}
-                          </span>
-                          <span className={`text-[10px] font-bold ${checked ? 'text-primary' : 'text-muted-foreground/30'}`}>
-                            {checked ? '1' : '0'}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Computed result */}
-                {(tdsMetaForm.basicClass || computedTds.missedMeta !== 'none') && (
-                  <div className="rounded-lg bg-secondary/30 border border-border/50 p-2.5 space-y-1.5 text-xs" dir="rtl">
-                    {tdsMetaForm.basicClass && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">סיווג:</span>
-                        <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
-                          tdsMetaForm.basicClass === 'META'    ? 'bg-emerald-500/15 text-emerald-400' :
-                          tdsMetaForm.basicClass === 'OVERLAP' ? 'bg-amber-500/15 text-amber-400' :
-                                                                  'bg-blue-500/15 text-blue-400'
-                        }`}>{tdsMetaForm.basicClass}</span>
-                      </div>
-                    )}
-                    {computedTds.missedMeta !== 'none' && (
-                      <>
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">MISSED_META:</span>
-                          <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
-                            computedTds.missedMeta === 'full' ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-400'
-                          }`}>{computedTds.missedMeta === 'full' ? 'מלא' : 'חלקי'}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">MO_SCORE:</span>
-                          <span className="font-bold text-orange-400">{computedTds.moScore}</span>
-                        </div>
-                        {computedTds.moComponents.length > 0 && (
-                          <div className="pt-1 border-t border-border/40 space-y-0.5">
-                            <p className="text-muted-foreground text-[10px]">רכיבים מוחמצים:</p>
-                            <p className="text-foreground/70 text-[11px] leading-relaxed">
-                              {computedTds.moComponents.join('، ')}
-                            </p>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* TDS Reasoning */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">נימוק TDS</label>
-                  <textarea
-                    value={tdsMetaForm.tdReasoning}
-                    onChange={e => setTdsMetaForm(f => ({ ...f, tdReasoning: e.target.value }))}
-                    rows={2}
-                    dir="rtl"
-                    placeholder="למה בחרת בסיווג זה? מה הצדיק (או לא הצדיק) META מלא?"
-                    className="w-full bg-background border border-border rounded-md px-2 py-1.5 text-xs focus:outline-none focus:border-primary resize-none"
-                  />
-                </div>
-
-              </div>
+              <TdsMetaPanel form={tdsMetaForm} onChange={setTdsMetaForm} />
             )}
 
           </div>

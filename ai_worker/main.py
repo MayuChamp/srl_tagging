@@ -36,6 +36,26 @@ VIDEO_PATH = os.getenv("VIDEO_PATH", "/Users/yearadany/srl ai tagging/videos/ס�
 VIDEO_TITLE = os.getenv("VIDEO_TITLE", "המורה פז")
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./chunks")
 
+def compute_tds_meta_derived(meta):
+    """Compute missed_meta / mo_score / mo_components from raw STG fields."""
+    stg_score = sum(int(meta.get(k, 0)) for k in
+                    ['stg_naming', 'stg_when', 'stg_how', 'stg_why', 'stg_when_not'])
+    meta_intro = bool(meta.get('meta_intro', False))
+    missed_meta, mo_score, mo_components = 'none', 0, []
+    if meta_intro:
+        if stg_score == 0:
+            missed_meta, mo_score = 'full', 5
+            mo_components = ['שיום', 'מתי להשתמש', 'איך להשתמש', 'למה להשתמש', 'מתי לא להשתמש']
+        elif stg_score < 5:
+            missed_meta, mo_score = 'partial', 5 - stg_score
+            for key, label in [('stg_naming', 'שיום'), ('stg_when', 'מתי להשתמש'),
+                                ('stg_how', 'איך להשתמש'), ('stg_why', 'למה להשתמש'),
+                                ('stg_when_not', 'מתי לא להשתמש')]:
+                if not int(meta.get(key, 0)):
+                    mo_components.append(label)
+    return {'missed_meta': missed_meta, 'mo_score': mo_score, 'mo_components': mo_components}
+
+
 def split_video(input_path, output_dir, chunk_duration=300):
     print(f"Splitting video into {chunk_duration}s chunks...")
     if not os.path.exists(output_dir):
@@ -115,6 +135,29 @@ MO codes — assign when the teacher COULD HAVE but DID NOT:
   • Student showed confusion and teacher didn't prompt self-monitoring → MO_MON
   • Correct answer given but teacher didn't ask for justification/evidence → MO_EVID
 
+--- TDS META-CODING LAYER ---
+
+For EVERY event you MUST include a "tds_meta" object with this additional analysis:
+
+basic_class — overall classification (for TDS_NONE/TDS_MOT events use "COG" as default):
+  "COG"     — instruction focuses on content-specific cognitive operations
+  "OVERLAP" — both cognitive and metacognitive elements present, BUT naming only (שיום בלבד)
+  "META"    — instruction addresses metacognitive strategy use
+  Auto-rule: if ONLY stg_naming=1 and all other stg_*=0 → MUST set basic_class="OVERLAP"
+
+meta_intro — true if teacher opened an explicit metacognitive space (paused to frame strategy use);
+             false if instruction was embedded in content flow without explicit framing.
+
+meta_intro_type — when meta_intro=true, one of (empty string "" when meta_intro=false):
+  "עצירה לחשיבה", "שיום אסטרטגיה", "הזמנה לבדיקה", "הזמנה לבחירה", "רפלקציה", "אחר"
+
+META_STG components (1=explicitly present in this event, 0=absent):
+  stg_naming:   teacher NAMED the strategy (e.g., "זו שיטת הצבה")
+  stg_when:     teacher explained WHEN to use it
+  stg_how:      teacher explained HOW to apply it step by step
+  stg_why:      teacher explained WHY it helps / its benefit
+  stg_when_not: teacher explained WHEN NOT to use it
+
 --- FEW-SHOT EXAMPLE (with reasoning) ---
 
 Transcript segment [2220s–2270s]:
@@ -127,7 +170,17 @@ Expected output for this event:
   "end_time": 2270.0,
   "evidence_text": "המורה נתנה שם לאסטרטגיה ('שיטת הצבה'), הסבירה מתי כדאי להשתמש בה, והפנתה את התלמיד לתכנן.",
   "reasoning": "TDS_META: המורה מתייחסת לתהליך החשיבה ולבחירת האסטרטגיה, לא לתוכן הספציפי. EX_EXPL: ארבעת המרכיבים נוכחים — מה (שיטת הצבה), מתי (כשיש שני נעלמים), למה (הדרך היעילה), וכיצד (שאלת ההפניה). SRL_PLAN: המורה מנחה את התלמיד לתכנן אסטרטגיה לפני הפתרון. Q3/EV3: עדות טקסטואלית ישירה וברורה.",
-  "confidence_score": 0.95
+  "confidence_score": 0.95,
+  "tds_meta": {
+    "basic_class": "META",
+    "meta_intro": true,
+    "meta_intro_type": "שיום אסטרטגיה",
+    "stg_naming": 1,
+    "stg_when": 1,
+    "stg_how": 0,
+    "stg_why": 1,
+    "stg_when_not": 0
+  }
 }
 
 --- SCOPE CODEBOOK ---
@@ -435,9 +488,24 @@ def analyze_video_with_gemini(video_path):
                                 "end_time":        {"type": "number"},
                                 "evidence_text":   {"type": "string"},
                                 "reasoning":       {"type": "string"},
-                                "confidence_score":{"type": "number"}
+                                "confidence_score":{"type": "number"},
+                                "tds_meta": {
+                                    "type": "object",
+                                    "properties": {
+                                        "basic_class":     {"type": "string"},
+                                        "meta_intro":      {"type": "boolean"},
+                                        "meta_intro_type": {"type": "string"},
+                                        "stg_naming":      {"type": "integer"},
+                                        "stg_when":        {"type": "integer"},
+                                        "stg_how":         {"type": "integer"},
+                                        "stg_why":         {"type": "integer"},
+                                        "stg_when_not":    {"type": "integer"},
+                                    },
+                                    "required": ["basic_class", "meta_intro", "meta_intro_type",
+                                                 "stg_naming", "stg_when", "stg_how", "stg_why", "stg_when_not"]
+                                }
                             },
-                            "required": ["code_ids", "start_time", "end_time", "evidence_text", "reasoning", "confidence_score"]
+                            "required": ["code_ids", "start_time", "end_time", "evidence_text", "reasoning", "confidence_score", "tds_meta"]
                         }
                     }
                 },
@@ -528,6 +596,7 @@ def process_single_video(local_path, video_title, video_id=None):
     else:
         # Clear stale tags from any previous partial run
         supabase.table("tags").delete().eq("analysis_id", analysis_res.data[0]["id"]).execute()
+        supabase.table("tds_meta").delete().eq("analysis_id", analysis_res.data[0]["id"]).execute()
 
     analysis_id = analysis_res.data[0]['id']
 
@@ -596,6 +665,42 @@ def process_single_video(local_path, video_title, video_id=None):
                     supabase.table("tags").insert(chunk_rows[i:i+100]).execute()
                 total_rows += len(chunk_rows)
                 print(f"Chunk {idx+1}: inserted {len(chunk_rows)} tag rows ({total_rows} total so far).")
+
+            # Insert tds_meta rows for events that carry TDS codes
+            valid_classes = {'COG', 'OVERLAP', 'META'}
+            tds_rows = []
+            for event in events:
+                start_t = event.get("start_time", 0) + offset
+                end_t = event.get("end_time", 0) + offset
+                has_tds = any(c.startswith('TDS_') for c in event.get("code_ids", []))
+                meta = event.get("tds_meta")
+                if has_tds and meta:
+                    derived = compute_tds_meta_derived(meta)
+                    basic_class = meta.get("basic_class") or None
+                    if basic_class not in valid_classes:
+                        basic_class = None
+                    tds_rows.append({
+                        "analysis_id": analysis_id,
+                        "start_time": start_t,
+                        "end_time": end_t,
+                        "basic_class": basic_class,
+                        "meta_intro": bool(meta.get("meta_intro", False)),
+                        "meta_intro_type": meta.get("meta_intro_type") or None,
+                        "stg_naming": int(meta.get("stg_naming", 0)),
+                        "stg_when": int(meta.get("stg_when", 0)),
+                        "stg_how": int(meta.get("stg_how", 0)),
+                        "stg_why": int(meta.get("stg_why", 0)),
+                        "stg_when_not": int(meta.get("stg_when_not", 0)),
+                        "missed_meta": derived["missed_meta"],
+                        "mo_score": derived["mo_score"],
+                        "mo_components": derived["mo_components"],
+                        "tds_reasoning": event.get("reasoning"),
+                    })
+            if tds_rows:
+                supabase.table("tds_meta").upsert(
+                    tds_rows, on_conflict="analysis_id,start_time,end_time"
+                ).execute()
+                print(f"Chunk {idx+1}: inserted {len(tds_rows)} tds_meta rows.")
 
             # Update progress after each chunk
             supabase.table("analyses").update({

@@ -16,6 +16,7 @@ export function UploadModal({
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("upload");
   const [title, setTitle] = useState("");
+  const [folderPath, setFolderPath] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -25,6 +26,7 @@ export function UploadModal({
 
   const reset = () => {
     setTitle("");
+    setFolderPath("");
     setFile(null);
     setUrl("");
     setError("");
@@ -47,6 +49,8 @@ export function UploadModal({
 
     setUploading(true);
 
+    const folder_path = folderPath.trim().replace(/^\/+|\/+$/g, "") || null;
+
     if (mode === "link") {
       if (!url.trim()) {
         setError("Please enter a video URL.");
@@ -56,7 +60,7 @@ export function UploadModal({
 
       const { error: insertError } = await supabase
         .from("videos")
-        .insert({ title: title.trim(), storage_path: url.trim(), status: "pending" });
+        .insert({ title: title.trim(), storage_path: url.trim(), status: "pending", folder_path });
 
       if (insertError) {
         setError(insertError.message);
@@ -88,7 +92,7 @@ export function UploadModal({
 
       await supabase
         .from("videos")
-        .insert({ title: title.trim(), storage_path: publicUrl, status: "pending" });
+        .insert({ title: title.trim(), storage_path: publicUrl, status: "pending", folder_path });
     }
 
     router.refresh();
@@ -145,6 +149,23 @@ export function UploadModal({
               className="w-full bg-secondary/30 border border-border rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground"
               placeholder="Enter video title"
             />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium" htmlFor="add-folder">
+              Folder <span className="text-muted-foreground font-normal">(optional)</span>
+            </label>
+            <input
+              id="add-folder"
+              type="text"
+              value={folderPath}
+              onChange={(e) => setFolderPath(e.target.value)}
+              className="w-full bg-secondary/30 border border-border rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground"
+              placeholder="e.g. Class A/Lesson 1"
+            />
+            <p className="text-xs text-muted-foreground">
+              Use &quot;/&quot; to nest folders. Leave blank to keep this video uncategorized.
+            </p>
           </div>
 
           {mode === "link" ? (

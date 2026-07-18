@@ -66,7 +66,12 @@ export async function GET(request: NextRequest) {
         .eq("analysis_id", analysis.id)
         .order("start_time", { ascending: true });
 
-      return NextResponse.json({ status: "completed", tags: tags ?? [] });
+      const { data: tdsMeta } = await supabase
+        .from("tds_meta")
+        .select("*")
+        .eq("analysis_id", analysis.id);
+
+      return NextResponse.json({ status: "completed", tags: tags ?? [], tds_meta: tdsMeta ?? [] });
     }
   }
 

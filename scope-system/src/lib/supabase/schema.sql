@@ -12,7 +12,8 @@ CREATE TABLE videos (
   storage_path TEXT NOT NULL, -- Path in Supabase Storage
   duration_seconds INTEGER,
   status analysis_status DEFAULT 'pending',
-  metadata JSONB DEFAULT '{}'::jsonb
+  metadata JSONB DEFAULT '{}'::jsonb,
+  folder_path TEXT -- Optional folder hierarchy for organizing videos, e.g. "Class A/Lesson 1" (segments separated by "/")
 );
 
 -- 2. Codebooks Table
