@@ -1379,7 +1379,7 @@ function TaggingModeInner() {
     setLoadingLibrary(true);
     const { data, error } = await supabase
       .from("videos")
-      .select("id, title, storage_path, duration_seconds, created_at, folder_path")
+      .select("*")
       .order("created_at", { ascending: false });
     if (error) {
       console.error("Failed to load video library:", error);
