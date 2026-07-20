@@ -10,7 +10,7 @@ const SERVICE_ROLE_KEY =
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 // ---- Configuration ----
-const VIDEO_PATH = "/Users/yearadany/srl ai tagging/videos/נגזרת ופונקציה.mov";
+const VIDEO_PATH = "/Users/yearadany/srl ai tagging/videos/נגזרת_ופונקציה_compressed.mp4";
 const VIDEO_TITLE = "נגזרת ופונקציה";
 const FOLDER_PATH = null; // set to e.g. "מתמטיקה" if you want a folder
 
@@ -34,7 +34,7 @@ async function main() {
     .upload(filename, fileBuffer, {
       cacheControl: "3600",
       upsert: false,
-      contentType: "video/quicktime",
+      contentType: "video/mp4",
     });
 
   if (uploadError) {

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Search, Trash2, RefreshCw, Save, X, AlertTriangle, CheckCircle2,
   Video, MoreVertical, Eye, Clock, Folder, FolderOpen, FolderInput,
-  ChevronRight, ChevronDown, List, FolderTree as FolderTreeIcon,
+  ChevronRight, ChevronDown, List, FolderTree as FolderTreeIcon, Tag,
 } from "lucide-react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
@@ -257,6 +257,10 @@ export function VideoSearch({ videos: initialVideos }: { videos: VideoItem[] }) 
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
                   <div className="absolute right-0 top-9 z-20 bg-card border border-border rounded-xl shadow-[var(--shadow-lg)] py-1.5 min-w-[170px] overflow-hidden">
+                    <Link href={`/tagging?video=${video.id}`} onClick={() => setOpenMenuId(null)}
+                      className="flex items-center gap-2.5 px-3.5 py-2 text-[13px] font-medium text-primary hover:bg-primary/10 transition-colors">
+                      <Tag size={14} className="text-primary" /> Start Tagging
+                    </Link>
                     <Link href={`/videos/${video.id}`} onClick={() => setOpenMenuId(null)}
                       className="flex items-center gap-2.5 px-3.5 py-2 text-[13px] hover:bg-secondary transition-colors">
                       <Eye size={14} className="text-muted-foreground" /> View details
@@ -316,10 +320,16 @@ export function VideoSearch({ videos: initialVideos }: { videos: VideoItem[] }) 
           </div>
 
           {/* CTA */}
-          <Link href={`/videos/${video.id}`}
-            className="mt-3 flex items-center justify-center gap-1.5 w-full text-[13px] font-semibold text-primary bg-primary/8 hover:bg-primary/15 py-2 rounded-xl transition-all border border-primary/20 hover:border-primary/40">
-            View Analysis
-          </Link>
+          <div className="mt-3 flex gap-2">
+            <Link href={`/tagging?video=${video.id}`}
+              className="flex-1 flex items-center justify-center gap-1.5 text-[13px] font-semibold text-primary-foreground bg-primary hover:bg-primary/90 py-2 rounded-xl transition-all shadow-sm">
+              <Tag size={13} /> Start Tagging
+            </Link>
+            <Link href={`/videos/${video.id}`}
+              className="flex-1 flex items-center justify-center gap-1.5 text-[13px] font-semibold text-muted-foreground bg-secondary hover:bg-secondary/80 py-2 rounded-xl transition-all border border-border">
+              <Eye size={13} /> View Analysis
+            </Link>
+          </div>
         </div>
       </div>
     );

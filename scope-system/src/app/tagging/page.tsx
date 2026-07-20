@@ -844,131 +844,131 @@ function TaggingModeInner() {
     document.addEventListener("mouseup", onUp);
   };
 
-  // Restore session from ?session=<id> URL param
+  // Restore session from ?session=<id> or video from ?video=<id> URL param
   useEffect(() => {
     const sessionId = searchParams.get("session");
-    if (!sessionId) return;
-    setIsLoadingSession(true);
-    (async () => {
-      const { data: analysis } = await supabase
-        .from("analyses")
-        .select("*, videos(title, storage_path)")
-        .eq("id", sessionId)
-        .maybeSingle();
+    const videoParam = searchParams.get("video") || searchParams.get("videoId");
 
-      if (!analysis) { setIsLoadingSession(false); return; }
+    if (sessionId) {
+      setIsLoadingSession(true);
+      (async () => {
+        const { data: analysis } = await supabase
+          .from("analyses")
+          .select("*, videos(title, storage_path)")
+          .eq("id", sessionId)
+          .maybeSingle();
 
-      const { data: tagData } = await supabase
-        .from("tags")
-        .select("id, code_id, start_time, end_time, evidence_text, reasoning, confidence_score, created_at")
-        .eq("analysis_id", sessionId)
-        .order("start_time", { ascending: true })
-        .order("created_at", { ascending: true });
+        if (!analysis) { setIsLoadingSession(false); return; }
 
-      // Group rows belonging to the same multi-code event. Rows from the same event were
-      // inserted consecutively and share identical time+evidence, so we use a run-length
-      // approach: a new group starts whenever the key changes from the previous row.
-      type TagRow = { id: string; code_id: string; start_time: number; end_time: number; evidence_text: string | null; reasoning: string | null; confidence_score: number | null; created_at: string | null };
-      const grouped = new Map<string, TagRow[]>();
-      let prevKey = "";
-      let groupSeq = 0;
-      for (const t of (tagData || []) as TagRow[]) {
-        const baseKey = `${t.start_time}|${t.end_time}|${t.evidence_text ?? ""}|${t.confidence_score ?? ""}`;
-        if (baseKey !== prevKey) groupSeq++;
-        const key = `${baseKey}::${groupSeq}`;
-        if (!grouped.has(key)) grouped.set(key, []);
-        grouped.get(key)!.push(t);
-        prevKey = baseKey;
-      }
-      const restoredMarkers: VideoMarker[] = [...grouped.values()].map(group => {
-        const first = group[0];
-        const codes = Array.from(new Set(group.map(t => t.code_id)));
-        return {
-          id: first.id,
-          startTime: first.start_time,
-          endTime: first.end_time,
-          label: codes[0],
-          color: CODE_COLORS[codes[0]] ?? "#6b7280",
-          labels: codes,
-          colors: codes.map(id => CODE_COLORS[id] ?? "#6b7280"),
-          evidence: first.evidence_text ?? undefined,
-          reasoning: first.reasoning ?? undefined,
-          confidence: first.confidence_score ?? undefined,
-        };
-      });
+        const { data: tagData } = await supabase
+          .from("tags")
+          .select("id, code_id, start_time, end_time, evidence_text, reasoning, confidence_score, created_at")
+          .eq("analysis_id", sessionId)
+          .order("start_time", { ascending: true })
+          .order("created_at", { ascending: true });
 
-      const videoUrl: string | null =
-        (analysis.videos as { storage_path: string } | null)?.storage_path ||
-        analysis.summary_metrics?.video_url || null;
-      const videoId: string | null = analysis.video_id || null;
-
-      // Load tds_meta records and map them to restored markers by (start, end)
-      const { data: tdsMetaData } = await supabase
-        .from("tds_meta")
-        .select("*")
-        .eq("analysis_id", sessionId);
-
-      const tdsMetaByTime = new Map<string, StoredTdsMeta>();
-      for (const row of (tdsMetaData || [])) {
-        tdsMetaByTime.set(`${row.start_time}|${row.end_time}`, {
-          basicClass: row.basic_class,
-          metaIntro: row.meta_intro,
-          metaIntroType: row.meta_intro_type ?? '',
-          stgNaming: row.stg_naming === 1,
-          stgWhen: row.stg_when === 1,
-          stgHow: row.stg_how === 1,
-          stgWhy: row.stg_why === 1,
-          stgWhenNot: row.stg_when_not === 1,
-          tdReasoning: row.tds_reasoning ?? '',
-          metaStgScore: (row.stg_naming + row.stg_when + row.stg_how + row.stg_why + row.stg_when_not),
-          missedMeta: row.missed_meta ?? 'none',
-          moScore: row.mo_score ?? 0,
-          moComponents: row.mo_components ?? [],
+        // Group rows belonging to the same multi-code event. Rows from the same event were
+        // inserted consecutively and share identical time+evidence, so we use a run-length
+        // approach: a new group starts whenever the key changes from the previous row.
+        type TagRow = { id: string; code_id: string; start_time: number; end_time: number; evidence_text: string | null; reasoning: string | null; confidence_score: number | null; created_at: string | null };
+        const grouped = new Map<string, TagRow[]>();
+        let prevKey = "";
+        let groupSeq = 0;
+        for (const t of (tagData || []) as TagRow[]) {
+          const baseKey = `${t.start_time}|${t.end_time}|${t.evidence_text ?? ""}|${t.confidence_score ?? ""}`;
+          if (baseKey !== prevKey) groupSeq++;
+          const key = `${baseKey}::${groupSeq}`;
+          if (!grouped.has(key)) grouped.set(key, []);
+          grouped.get(key)!.push(t);
+          prevKey = baseKey;
+        }
+        const restoredMarkers: VideoMarker[] = [...grouped.values()].map(group => {
+          const first = group[0];
+          const codes = Array.from(new Set(group.map(t => t.code_id)));
+          return {
+            id: first.id,
+            startTime: first.start_time,
+            endTime: first.end_time,
+            label: codes[0],
+            color: CODE_COLORS[codes[0]] ?? "#6b7280",
+            labels: codes,
+            colors: codes.map(id => CODE_COLORS[id] ?? "#6b7280"),
+            evidence: first.evidence_text ?? undefined,
+            reasoning: first.reasoning ?? undefined,
+            confidence: first.confidence_score ?? undefined,
+          };
         });
-      }
-      const restoredTdsMeta = new Map<string, StoredTdsMeta>();
-      for (const m of restoredMarkers) {
-        const meta = tdsMetaByTime.get(`${m.startTime}|${m.endTime}`);
-        if (meta) restoredTdsMeta.set(m.id, meta);
-      }
-      setMarkerTdsMeta(restoredTdsMeta);
 
-      setMarkers(restoredMarkers);
-      setSessionName(analysis.summary_metrics?.session_name || "");
-      if (Array.isArray(analysis.summary_metrics?.captions)) {
-        setCaptions(analysis.summary_metrics.captions);
-      }
-      setResumedSessionId(sessionId);
-      if (videoUrl) {
-        const videoTitle: string | null = (analysis.videos as { title: string } | null)?.title || null;
-        setVideoInputUrl(videoTitle || videoUrl);
-        setIsEmbedMode(false);
-        setLoadedVideoId(videoId);
+        const videoUrl: string | null =
+          (analysis.videos as { storage_path: string } | null)?.storage_path ||
+          analysis.summary_metrics?.video_url || null;
+        const videoId: string | null = analysis.video_id || null;
 
-        // If the videoUrl is a Supabase Storage URL, generate a signed URL so it plays correctly
-        if (videoUrl.includes(".supabase.co/storage/")) {
-          const storageMatch = videoUrl.match(/\/object\/(?:public|sign)\/videos\/(.+?)(?:\?|$)/);
-          if (storageMatch) {
-            const storagePath = decodeURIComponent(storageMatch[1]);
-            try {
-              const { data } = await supabase.storage.from("videos").createSignedUrl(storagePath, 3600);
-              if (data?.signedUrl) {
-                setLoadedUrl(data.signedUrl);
-              } else {
-                setLoadedUrl(videoUrl);
-              }
-            } catch {
-              setLoadedUrl(videoUrl);
-            }
-          } else {
-            setLoadedUrl(videoUrl);
-          }
-        } else {
+        // Load tds_meta records and map them to restored markers by (start, end)
+        const { data: tdsMetaData } = await supabase
+          .from("tds_meta")
+          .select("*")
+          .eq("analysis_id", sessionId);
+
+        const tdsMetaByTime = new Map<string, StoredTdsMeta>();
+        for (const row of (tdsMetaData || [])) {
+          tdsMetaByTime.set(`${row.start_time}|${row.end_time}`, {
+            basicClass: row.basic_class,
+            metaIntro: row.meta_intro,
+            metaIntroType: row.meta_intro_type ?? '',
+            stgNaming: row.stg_naming === 1,
+            stgWhen: row.stg_when === 1,
+            stgHow: row.stg_how === 1,
+            stgWhy: row.stg_why === 1,
+            stgWhenNot: row.stg_when_not === 1,
+            tdReasoning: row.tds_reasoning ?? '',
+            metaStgScore: (row.stg_naming + row.stg_when + row.stg_how + row.stg_why + row.stg_when_not),
+            missedMeta: row.missed_meta ?? 'none',
+            moScore: row.mo_score ?? 0,
+            moComponents: row.mo_components ?? [],
+          });
+        }
+        const restoredTdsMeta = new Map<string, StoredTdsMeta>();
+        for (const m of restoredMarkers) {
+          const meta = tdsMetaByTime.get(`${m.startTime}|${m.endTime}`);
+          if (meta) restoredTdsMeta.set(m.id, meta);
+        }
+        setMarkerTdsMeta(restoredTdsMeta);
+
+        setMarkers(restoredMarkers);
+        setSessionName(analysis.summary_metrics?.session_name || "");
+        if (Array.isArray(analysis.summary_metrics?.captions)) {
+          setCaptions(analysis.summary_metrics.captions);
+        }
+        setResumedSessionId(sessionId);
+        if (videoUrl) {
+          const videoTitle: string | null = (analysis.videos as { title: string } | null)?.title || null;
+          setVideoInputUrl(videoTitle || videoUrl);
+          setIsEmbedMode(false);
+          setLoadedVideoId(videoId);
           setLoadedUrl(videoUrl);
         }
-      }
-      setIsLoadingSession(false);
-    })();
+        setIsLoadingSession(false);
+      })();
+    } else if (videoParam) {
+      setIsLoadingSession(true);
+      (async () => {
+        const { data: video } = await supabase
+          .from("videos")
+          .select("*")
+          .eq("id", videoParam)
+          .maybeSingle();
+
+        if (video) {
+          setLoadedVideoId(video.id);
+          setVideoInputUrl(video.title || video.storage_path);
+          setIsEmbedMode(false);
+          setLoadedUrl(video.storage_path);
+          setSessionName(video.title ? `${video.title}` : "");
+        }
+        setIsLoadingSession(false);
+      })();
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePrismChange = (prism: PrismKey) => {
@@ -1388,45 +1388,16 @@ function TaggingModeInner() {
     setLoadingLibrary(false);
   };
 
-  const handleSelectLibraryVideo = async (video: LibraryVideo) => {
+  const handleSelectLibraryVideo = (video: LibraryVideo) => {
     setShowVideoBrowser(false);
     setLibrarySearch("");
     setLoadedVideoId(video.id);
     setVideoInputUrl(video.title || video.storage_path);
     setIsEmbedMode(false);
-
-    const sp = video.storage_path;
-
-    // If it's already a full external URL (YouTube, Vimeo, Drive, or full https), use as-is
-    // But if it looks like a Supabase storage public URL (".supabase.co/storage/"), try a signed URL fallback
-    if (sp.startsWith("https://") && !sp.includes(".supabase.co/storage/")) {
-      // External URL (YouTube, Vimeo, Google Drive, etc.)
-      setLoadedUrl(sp);
-      return;
+    setLoadedUrl(video.storage_path);
+    if (!sessionName) {
+      setSessionName(video.title || "");
     }
-
-    // Attempt to extract the storage filename from a Supabase public URL or use the path directly
-    let storagePath = sp;
-    const storageMatch = sp.match(/\/object\/(?:public|sign)\/videos\/(.+?)(?:\?|$)/);
-    if (storageMatch) {
-      storagePath = decodeURIComponent(storageMatch[1]);
-    }
-
-    // Try creating a signed URL (valid for 1 hour) — works for both public and private buckets
-    try {
-      const { data, error } = await supabase.storage
-        .from("videos")
-        .createSignedUrl(storagePath, 3600);
-      if (data?.signedUrl && !error) {
-        setLoadedUrl(data.signedUrl);
-        return;
-      }
-    } catch {
-      // Fallback to original path
-    }
-
-    // Final fallback: use the storage_path as-is
-    setLoadedUrl(sp);
   };
 
   const filteredLibrary = librarySearch.trim()
@@ -1716,9 +1687,18 @@ function TaggingModeInner() {
             {loadedUrl ? (
               <VideoPlayer key={loadedUrl} url={loadedUrl} markers={markers} onTimeUpdate={(t) => setCurrentTime(t)} captions={captions} seekRequest={seekRequest} />
             ) : (
-              <div className="flex flex-col items-center justify-center h-full min-h-[100px] text-muted-foreground text-sm gap-2">
-                <Video size={28} className="opacity-20" />
-                <span>Paste a URL, choose a file, or browse the library to begin</span>
+              <div className="flex flex-col items-center justify-center h-full min-h-[220px] text-muted-foreground text-sm gap-3 p-6 text-center bg-secondary/10">
+                <Video size={36} className="opacity-30 text-primary" />
+                <div className="space-y-1 max-w-sm">
+                  <p className="font-semibold text-foreground text-base">טרם נבחר וידאו לתיוג</p>
+                  <p className="text-xs text-muted-foreground">בחר סרטון מספריית הוידאו של המערכת, הדבק קישור חיצוני, או העלה קובץ וידאו מקומי.</p>
+                </div>
+                <button
+                  onClick={handleOpenVideoBrowser}
+                  className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all shadow-sm mt-1"
+                >
+                  <Library size={16} /> עיון בספריית הוידאו (Browse Library)
+                </button>
               </div>
             )}
           </div>
