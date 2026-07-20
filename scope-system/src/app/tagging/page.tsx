@@ -268,12 +268,15 @@ function TdsMetaPanel({
   const computed = computeTdsMeta(form);
   const [hoveredTip, setHoveredTip] = useState<string | null>(null);
 
-  // Auto-set basicClass to OVERLAP when stgNaming=true and all other STG are false
-  useEffect(() => {
-    if (form.stgNaming && !form.stgWhen && !form.stgHow && !form.stgWhy && !form.stgWhenNot) {
-      onChange(f => f.basicClass === 'OVERLAP' ? f : { ...f, basicClass: 'OVERLAP' });
-    }
-  }, [form.stgNaming, form.stgWhen, form.stgHow, form.stgWhy, form.stgWhenNot]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Suggest (never force) a basicClass from the STG pattern — naming-only implies OVERLAP,
+  // any other component present implies META. The user must click to accept.
+  const suggestedBasicClass = useMemo((): 'COG' | 'OVERLAP' | 'META' | null => {
+    const { stgNaming, stgWhen, stgHow, stgWhy, stgWhenNot } = form;
+    const hasNonNaming = stgWhen || stgHow || stgWhy || stgWhenNot;
+    if (stgNaming && !hasNonNaming) return 'OVERLAP';
+    if (hasNonNaming) return 'META';
+    return null;
+  }, [form]);
 
   return (
     <div className="space-y-3 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3">
@@ -284,6 +287,14 @@ function TdsMetaPanel({
           <span className="w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
           TDS Meta-Coding
         </h4>
+        {suggestedBasicClass && form.basicClass !== suggestedBasicClass && (
+          <button
+            onClick={() => onChange(f => ({ ...f, basicClass: suggestedBasicClass }))}
+            className="text-[10px] text-indigo-400 border border-indigo-400/30 px-2 py-0.5 rounded hover:bg-indigo-400/10 transition-colors"
+          >
+            הצעה: {suggestedBasicClass}
+          </button>
+        )}
       </div>
 
       {/* META_INTRO */}
@@ -605,7 +616,6 @@ function TaggingModeInner() {
   };
 
   const applyAiTdsMeta = (rows: AiTdsMetaRow[]) => {
-    if (!rows.length) return;
     const m = new Map<string, StoredTdsMeta>();
     for (const row of rows) {
       m.set(`${row.start_time}|${row.end_time}`, aiTdsRowToStoredMeta(row));
@@ -660,26 +670,31 @@ function TaggingModeInner() {
     return () => clearInterval(id);
   }, [aiStatus, loadedVideoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Keyboard shortcuts for TDS meta coding
+  // Keyboard shortcuts for TDS meta coding — target whichever TDS form is actually
+  // open: the marker being edited (editTdsMeta) takes precedence over the new-tag draft.
+  const isEditingTdsMeta = editingMarkerId !== null && editTdsMeta !== null;
   useEffect(() => {
-    if (!hasTdsCode || rightTab === 'AI') return;
+    if (rightTab === 'AI' || (!hasTdsCode && !isEditingTdsMeta)) return;
+    const setter = isEditingTdsMeta
+      ? (setEditTdsMeta as React.Dispatch<React.SetStateAction<TdsMetaForm>>)
+      : setTdsMetaForm;
     const handler = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return;
       switch (e.key) {
-        case 'c': case 'C': setTdsMetaForm(f => ({ ...f, basicClass: 'COG' }));     break;
-        case 'o': case 'O': setTdsMetaForm(f => ({ ...f, basicClass: 'OVERLAP' })); break;
-        case 'm': case 'M': setTdsMetaForm(f => ({ ...f, basicClass: 'META' }));    break;
-        case '1': setTdsMetaForm(f => ({ ...f, stgNaming:  !f.stgNaming }));  break;
-        case '2': setTdsMetaForm(f => ({ ...f, stgWhen:    !f.stgWhen }));    break;
-        case '3': setTdsMetaForm(f => ({ ...f, stgHow:     !f.stgHow }));     break;
-        case '4': setTdsMetaForm(f => ({ ...f, stgWhy:     !f.stgWhy }));     break;
-        case '5': setTdsMetaForm(f => ({ ...f, stgWhenNot: !f.stgWhenNot })); break;
+        case 'c': case 'C': setter(f => ({ ...f, basicClass: 'COG' }));     break;
+        case 'o': case 'O': setter(f => ({ ...f, basicClass: 'OVERLAP' })); break;
+        case 'm': case 'M': setter(f => ({ ...f, basicClass: 'META' }));    break;
+        case '1': setter(f => ({ ...f, stgNaming:  !f.stgNaming }));  break;
+        case '2': setter(f => ({ ...f, stgWhen:    !f.stgWhen }));    break;
+        case '3': setter(f => ({ ...f, stgHow:     !f.stgHow }));     break;
+        case '4': setter(f => ({ ...f, stgWhy:     !f.stgWhy }));     break;
+        case '5': setter(f => ({ ...f, stgWhenNot: !f.stgWhenNot })); break;
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [hasTdsCode, rightTab]);
+  }, [hasTdsCode, rightTab, isEditingTdsMeta]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTriggerAnalysis = async () => {
     if (!loadedVideoId) return;
@@ -762,7 +777,8 @@ function TaggingModeInner() {
       reasoning: m.reasoning ?? "",
     });
     const existingMeta = markerTdsMeta.get(m.id);
-    setEditTdsMeta(existingMeta ? { ...existingMeta } : null);
+    const isTdsMarker = (m.labels ?? [m.label]).some(l => l.startsWith('TDS_'));
+    setEditTdsMeta(existingMeta ? { ...existingMeta } : isTdsMarker ? { ...EMPTY_TDS_META } : null);
   };
 
   const handleEditSave = (id: string) => {
@@ -774,7 +790,7 @@ function TaggingModeInner() {
       evidence: editForm.evidence,
       reasoning: editForm.reasoning || undefined,
     }));
-    if (editTdsMeta?.basicClass) {
+    if (editTdsMeta) {
       setMarkerTdsMeta(prev => {
         const n = new Map(prev);
         n.set(id, computeTdsMeta(editTdsMeta));
@@ -924,10 +940,32 @@ function TaggingModeInner() {
       }
       setResumedSessionId(sessionId);
       if (videoUrl) {
-        setLoadedUrl(videoUrl);
-        setVideoInputUrl((analysis.videos as { title: string } | null)?.title || videoUrl);
+        const videoTitle: string | null = (analysis.videos as { title: string } | null)?.title || null;
+        setVideoInputUrl(videoTitle || videoUrl);
         setIsEmbedMode(false);
         setLoadedVideoId(videoId);
+
+        // If the videoUrl is a Supabase Storage URL, generate a signed URL so it plays correctly
+        if (videoUrl.includes(".supabase.co/storage/")) {
+          const storageMatch = videoUrl.match(/\/object\/(?:public|sign)\/videos\/(.+?)(?:\?|$)/);
+          if (storageMatch) {
+            const storagePath = decodeURIComponent(storageMatch[1]);
+            try {
+              const { data } = await supabase.storage.from("videos").createSignedUrl(storagePath, 3600);
+              if (data?.signedUrl) {
+                setLoadedUrl(data.signedUrl);
+              } else {
+                setLoadedUrl(videoUrl);
+              }
+            } catch {
+              setLoadedUrl(videoUrl);
+            }
+          } else {
+            setLoadedUrl(videoUrl);
+          }
+        } else {
+          setLoadedUrl(videoUrl);
+        }
       }
       setIsLoadingSession(false);
     })();
@@ -1089,7 +1127,10 @@ function TaggingModeInner() {
       if (resumedSessionId) {
         const { error } = await supabase
           .from("analyses")
-          .update({ summary_metrics: { session_name: name, video_url: loadedUrl, captions: captionPayload } })
+          .update({
+            video_id: loadedVideoId || null,
+            summary_metrics: { session_name: name, video_url: loadedVideoId ? null : loadedUrl, captions: captionPayload },
+          })
           .eq("id", resumedSessionId);
         if (error) throw error;
         await supabase.from("tags").delete().eq("analysis_id", resumedSessionId);
@@ -1336,21 +1377,56 @@ function TaggingModeInner() {
   const handleOpenVideoBrowser = async () => {
     setShowVideoBrowser(true);
     setLoadingLibrary(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("videos")
       .select("id, title, storage_path, duration_seconds, created_at, folder_path")
       .order("created_at", { ascending: false });
+    if (error) {
+      console.error("Failed to load video library:", error);
+    }
     setLibraryVideos((data as LibraryVideo[]) || []);
     setLoadingLibrary(false);
   };
 
-  const handleSelectLibraryVideo = (video: LibraryVideo) => {
-    setLoadedUrl(video.storage_path);
-    setVideoInputUrl(video.title || video.storage_path);
-    setIsEmbedMode(false);
-    setLoadedVideoId(video.id);
+  const handleSelectLibraryVideo = async (video: LibraryVideo) => {
     setShowVideoBrowser(false);
     setLibrarySearch("");
+    setLoadedVideoId(video.id);
+    setVideoInputUrl(video.title || video.storage_path);
+    setIsEmbedMode(false);
+
+    const sp = video.storage_path;
+
+    // If it's already a full external URL (YouTube, Vimeo, Drive, or full https), use as-is
+    // But if it looks like a Supabase storage public URL (".supabase.co/storage/"), try a signed URL fallback
+    if (sp.startsWith("https://") && !sp.includes(".supabase.co/storage/")) {
+      // External URL (YouTube, Vimeo, Google Drive, etc.)
+      setLoadedUrl(sp);
+      return;
+    }
+
+    // Attempt to extract the storage filename from a Supabase public URL or use the path directly
+    let storagePath = sp;
+    const storageMatch = sp.match(/\/object\/(?:public|sign)\/videos\/(.+?)(?:\?|$)/);
+    if (storageMatch) {
+      storagePath = decodeURIComponent(storageMatch[1]);
+    }
+
+    // Try creating a signed URL (valid for 1 hour) — works for both public and private buckets
+    try {
+      const { data, error } = await supabase.storage
+        .from("videos")
+        .createSignedUrl(storagePath, 3600);
+      if (data?.signedUrl && !error) {
+        setLoadedUrl(data.signedUrl);
+        return;
+      }
+    } catch {
+      // Fallback to original path
+    }
+
+    // Final fallback: use the storage_path as-is
+    setLoadedUrl(sp);
   };
 
   const filteredLibrary = librarySearch.trim()

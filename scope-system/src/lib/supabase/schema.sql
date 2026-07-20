@@ -53,11 +53,35 @@ CREATE TABLE tags (
   notes TEXT -- For manual tagging
 );
 
+-- 5. TDS Meta-Coding Table
+-- Metacognitive strategy-coding layer attached to TDS_* tagged events
+CREATE TABLE tds_meta (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  analysis_id UUID REFERENCES analyses(id) ON DELETE CASCADE,
+  start_time FLOAT NOT NULL, -- in seconds
+  end_time FLOAT NOT NULL, -- in seconds
+  basic_class TEXT, -- 'COG' | 'OVERLAP' | 'META'
+  meta_intro BOOLEAN DEFAULT FALSE,
+  meta_intro_type TEXT,
+  stg_naming INTEGER DEFAULT 0,
+  stg_when INTEGER DEFAULT 0,
+  stg_how INTEGER DEFAULT 0,
+  stg_why INTEGER DEFAULT 0,
+  stg_when_not INTEGER DEFAULT 0,
+  missed_meta TEXT DEFAULT 'none', -- 'none' | 'partial' | 'full'
+  mo_score INTEGER DEFAULT 0,
+  mo_components JSONB DEFAULT '[]'::jsonb,
+  tds_reasoning TEXT,
+  UNIQUE (analysis_id, start_time, end_time)
+);
+
 -- Setup basic Row Level Security (RLS)
 ALTER TABLE videos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE codebooks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE analyses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tags ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tds_meta ENABLE ROW LEVEL SECURITY;
 
 -- Create policies to allow anon/authenticated access (For MVP purposes, allowing full access. Update later for production)
 CREATE POLICY "Allow public read access to videos" ON videos FOR SELECT USING (true);
@@ -75,3 +99,8 @@ CREATE POLICY "Allow public read access to tags" ON tags FOR SELECT USING (true)
 CREATE POLICY "Allow public insert to tags" ON tags FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow public update to tags" ON tags FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete to tags" ON tags FOR DELETE USING (true);
+
+CREATE POLICY "Allow public read access to tds_meta" ON tds_meta FOR SELECT USING (true);
+CREATE POLICY "Allow public insert to tds_meta" ON tds_meta FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update to tds_meta" ON tds_meta FOR UPDATE USING (true);
+CREATE POLICY "Allow public delete to tds_meta" ON tds_meta FOR DELETE USING (true);

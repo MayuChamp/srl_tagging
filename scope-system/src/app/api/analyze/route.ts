@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
 
   for (const a of prev ?? []) {
     await supabase.from("tags").delete().eq("analysis_id", a.id);
+    await supabase.from("tds_meta").delete().eq("analysis_id", a.id);
   }
   if ((prev ?? []).length) {
     await supabase.from("analyses").delete().eq("video_id", videoId).eq("is_ai_generated", true);
@@ -66,10 +67,14 @@ export async function GET(request: NextRequest) {
         .eq("analysis_id", analysis.id)
         .order("start_time", { ascending: true });
 
-      const { data: tdsMeta } = await supabase
+      const { data: tdsMeta, error: tdsMetaError } = await supabase
         .from("tds_meta")
         .select("*")
         .eq("analysis_id", analysis.id);
+
+      if (tdsMetaError) {
+        console.error("Failed to fetch tds_meta for analysis", analysis.id, tdsMetaError);
+      }
 
       return NextResponse.json({ status: "completed", tags: tags ?? [], tds_meta: tdsMeta ?? [] });
     }
