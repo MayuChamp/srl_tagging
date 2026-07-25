@@ -135,6 +135,11 @@ function computeTdsMeta(f: TdsMetaForm): StoredTdsMeta {
   return { ...f, metaStgScore: score, missedMeta, moScore, moComponents };
 }
 
+// True if the user entered anything meaningful, even without clicking a COG/OVERLAP/META button
+function hasTdsMetaContent(f: TdsMetaForm): boolean {
+  return !!f.basicClass || f.metaIntro || f.stgNaming || f.stgWhen || f.stgHow || f.stgWhy || f.stgWhenNot || f.tdReasoning.trim().length > 0;
+}
+
 function aiTdsRowToStoredMeta(row: AiTdsMetaRow): StoredTdsMeta {
   const score = row.stg_naming + row.stg_when + row.stg_how + row.stg_why + row.stg_when_not;
   return {
@@ -1088,7 +1093,7 @@ function TaggingModeInner() {
     };
     // Capture tds_meta for this marker before state resets
     const newTdsMeta = new Map(markerTdsMeta);
-    if (hasTdsCode && tdsMetaForm.basicClass) {
+    if (hasTdsCode && hasTdsMetaContent(tdsMetaForm)) {
       newTdsMeta.set(newMarker.id, computeTdsMeta(tdsMetaForm));
     }
     setMarkerTdsMeta(newTdsMeta);
@@ -1168,7 +1173,7 @@ function TaggingModeInner() {
       // Save TDS meta rows
       const tdsRows = markersToSave.flatMap(m => {
         const meta = tdsMetaToUse.get(m.id);
-        if (!meta?.basicClass) return [];
+        if (!meta) return [];
         return [{
           analysis_id: analysisId,
           start_time: m.startTime,
@@ -1188,7 +1193,8 @@ function TaggingModeInner() {
         }];
       });
       if (tdsRows.length > 0) {
-        await supabase.from("tds_meta").insert(tdsRows);
+        const { error: tdsError } = await supabase.from("tds_meta").insert(tdsRows);
+        if (tdsError) throw tdsError;
       }
 
       setSessionSaved(true);
@@ -1264,7 +1270,11 @@ function TaggingModeInner() {
   const handleExportJson = () => {
     if (markers.length === 0) return alert("No tags to export.");
     const name = sessionName.trim() || `session_${new Date().toISOString().slice(0, 10)}`;
-    const session = { sessionName: name, videoUrl: loadedUrl, savedAt: new Date().toISOString(), tags: markers, captions: captions.length > 0 ? captions : undefined };
+    const tagsWithTdsMeta = markers.map(m => {
+      const tdsMeta = markerTdsMeta.get(m.id);
+      return tdsMeta ? { ...m, tdsMeta } : m;
+    });
+    const session = { sessionName: name, videoUrl: loadedUrl, savedAt: new Date().toISOString(), tags: tagsWithTdsMeta, captions: captions.length > 0 ? captions : undefined };
     const blob = new Blob([JSON.stringify(session, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1829,14 +1839,16 @@ function TaggingModeInner() {
                     {/* TDS Meta badges */}
                     {!isEditing && (() => {
                       const tds = markerTdsMeta.get(m.id);
-                      if (!tds?.basicClass) return null;
+                      if (!tds) return null;
                       return (
                         <div className="px-2.5 pb-2 flex flex-wrap gap-1 border-t border-indigo-500/20 pt-1.5">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                            tds.basicClass === 'META'    ? 'bg-emerald-500/15 text-emerald-400' :
-                            tds.basicClass === 'OVERLAP' ? 'bg-amber-500/15 text-amber-400' :
-                                                           'bg-blue-500/15 text-blue-400'
-                          }`}>{tds.basicClass}</span>
+                          {tds.basicClass && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                              tds.basicClass === 'META'    ? 'bg-emerald-500/15 text-emerald-400' :
+                              tds.basicClass === 'OVERLAP' ? 'bg-amber-500/15 text-amber-400' :
+                                                             'bg-blue-500/15 text-blue-400'
+                            }`}>{tds.basicClass}</span>
+                          )}
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-400 font-medium">
                             STG {tds.metaStgScore}/5
                           </span>
@@ -1849,6 +1861,11 @@ function TaggingModeInner() {
                             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
                               tds.missedMeta === 'full' ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-400'
                             }`}>MO {tds.missedMeta === 'full' ? 'מלא' : 'חלקי'} ({tds.moScore})</span>
+                          )}
+                          {tds.tdReasoning && (
+                            <p className="w-full text-xs text-foreground/50 italic leading-relaxed border-t border-indigo-500/20 pt-1 mt-0.5" dir="rtl">
+                              <span className="not-italic font-medium text-indigo-400/70">נימוק TDS: </span>{tds.tdReasoning}
+                            </p>
                           )}
                         </div>
                       );
@@ -2434,10 +2451,20 @@ function TaggingModeInner() {
   );
 }
 
+// Forces TaggingModeInner to fully remount (resetting all its state) whenever the
+// session/video identity in the URL changes — otherwise client-side navigation between
+// e.g. /tagging?session=X and /tagging ("New Session") reuses the same component instance
+// and leaves the previous session's tags/state on screen.
+function TaggingModeKeyed() {
+  const searchParams = useSearchParams();
+  const key = searchParams.get("session") ?? searchParams.get("video") ?? searchParams.get("videoId") ?? "blank";
+  return <TaggingModeInner key={key} />;
+}
+
 export default function TaggingMode() {
   return (
     <Suspense>
-      <TaggingModeInner />
+      <TaggingModeKeyed />
     </Suspense>
   );
 }
