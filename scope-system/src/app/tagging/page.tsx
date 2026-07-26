@@ -1358,6 +1358,12 @@ function TaggingModeInner() {
         const session = JSON.parse(ev.target?.result as string);
         if (!Array.isArray(session.tags)) throw new Error("Invalid session file");
         setMarkers(session.tags);
+        const importedTdsMeta = new Map<string, StoredTdsMeta>();
+        for (const tag of session.tags) {
+          if (tag?.tdsMeta) importedTdsMeta.set(tag.id, tag.tdsMeta as StoredTdsMeta);
+        }
+        setMarkerTdsMeta(importedTdsMeta);
+        setResumedSessionId(null);
         if (Array.isArray(session.captions)) setCaptions(session.captions);
         if (session.sessionName) setSessionName(session.sessionName);
         if (session.videoUrl) {

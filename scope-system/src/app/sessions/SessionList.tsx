@@ -4,9 +4,72 @@ import { useState, useMemo } from "react";
 import {
   BookOpen, Tag, Calendar, Video, ArrowRight, Plus, X,
   FolderInput, Folder, FolderOpen, ChevronRight, ChevronDown, List, FolderTree as FolderTreeIcon, FolderPlus,
+  Download,
 } from "lucide-react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
+
+interface BackupTagRow {
+  id: string;
+  analysis_id: string;
+  code_id: string;
+  start_time: number;
+  end_time: number;
+  evidence_text: string | null;
+  reasoning: string | null;
+  confidence_score: number | null;
+}
+
+interface BackupTdsRow {
+  analysis_id: string;
+  start_time: number;
+  end_time: number;
+  basic_class: string | null;
+  meta_intro: boolean;
+  meta_intro_type: string | null;
+  stg_naming: number;
+  stg_when: number;
+  stg_how: number;
+  stg_why: number;
+  stg_when_not: number;
+  missed_meta: string;
+  mo_score: number;
+  mo_components: string[];
+  tds_reasoning: string | null;
+}
+
+interface BackupAnalysisRow {
+  id: string;
+  created_at: string;
+  is_ai_generated: boolean;
+  summary_metrics: {
+    session_name?: string;
+    video_url?: string;
+    framework?: string;
+    folder_path?: string;
+    captions?: unknown[];
+  } | null;
+  video_id: string | null;
+  videos: { title: string; storage_path: string } | null;
+}
+
+function tdsRowToBackupMeta(row: BackupTdsRow) {
+  return {
+    basicClass: row.basic_class,
+    metaIntro: row.meta_intro,
+    metaIntroType: row.meta_intro_type ?? "",
+    stgNaming: row.stg_naming === 1,
+    stgWhen: row.stg_when === 1,
+    stgHow: row.stg_how === 1,
+    stgWhy: row.stg_why === 1,
+    stgWhenNot: row.stg_when_not === 1,
+    tdReasoning: row.tds_reasoning ?? "",
+    metaStgScore: row.stg_naming + row.stg_when + row.stg_how + row.stg_why + row.stg_when_not,
+    missedMeta: row.missed_meta,
+    moScore: row.mo_score ?? 0,
+    moComponents: row.mo_components ?? [],
+  };
+}
 
 interface SessionRow {
   id: string;
@@ -78,6 +141,88 @@ export function SessionList({ sessions: initialSessions }: { sessions: SessionRo
   const [moveFolderPath, setMoveFolderPath] = useState<string[]>([]);
   const [newFolderName, setNewFolderName] = useState("");
   const [isMovingFolder, setIsMovingFolder] = useState(false);
+  const [isExportingAll, setIsExportingAll] = useState(false);
+
+  const handleExportAll = async () => {
+    setIsExportingAll(true);
+    try {
+      const [{ data: analyses, error: analysesError }, { data: allTags, error: tagsError }, { data: allTdsMeta, error: tdsError }] =
+        await Promise.all([
+          supabase.from("analyses").select("id, created_at, is_ai_generated, summary_metrics, video_id, videos(title, storage_path)").order("created_at", { ascending: true }),
+          supabase.from("tags").select("id, analysis_id, code_id, start_time, end_time, evidence_text, reasoning, confidence_score").order("analysis_id", { ascending: true }).order("start_time", { ascending: true }),
+          supabase.from("tds_meta").select("analysis_id, start_time, end_time, basic_class, meta_intro, meta_intro_type, stg_naming, stg_when, stg_how, stg_why, stg_when_not, missed_meta, mo_score, mo_components, tds_reasoning"),
+        ]);
+      if (analysesError) throw analysesError;
+      if (tagsError) throw tagsError;
+      if (tdsError) throw tdsError;
+
+      const tagsByAnalysis = new Map<string, BackupTagRow[]>();
+      for (const t of (allTags || []) as BackupTagRow[]) {
+        if (!tagsByAnalysis.has(t.analysis_id)) tagsByAnalysis.set(t.analysis_id, []);
+        tagsByAnalysis.get(t.analysis_id)!.push(t);
+      }
+      const tdsByAnalysis = new Map<string, Map<string, BackupTdsRow>>();
+      for (const row of (allTdsMeta || []) as BackupTdsRow[]) {
+        if (!tdsByAnalysis.has(row.analysis_id)) tdsByAnalysis.set(row.analysis_id, new Map());
+        tdsByAnalysis.get(row.analysis_id)!.set(`${row.start_time}|${row.end_time}`, row);
+      }
+
+      const backupSessions = ((analyses || []) as unknown as BackupAnalysisRow[]).map(analysis => {
+        const rows = tagsByAnalysis.get(analysis.id) || [];
+        // Group consecutive rows sharing the same time+evidence into one multi-code event.
+        const grouped: BackupTagRow[][] = [];
+        let prevKey = "";
+        for (const t of rows) {
+          const key = `${t.start_time}|${t.end_time}|${t.evidence_text ?? ""}|${t.confidence_score ?? ""}`;
+          if (key !== prevKey || grouped.length === 0) grouped.push([]);
+          grouped[grouped.length - 1].push(t);
+          prevKey = key;
+        }
+        const tdsForSession = tdsByAnalysis.get(analysis.id);
+        const tags = grouped.map(group => {
+          const first = group[0];
+          const tdsRow = tdsForSession?.get(`${first.start_time}|${first.end_time}`);
+          return {
+            id: first.id,
+            startTime: first.start_time,
+            endTime: first.end_time,
+            labels: Array.from(new Set(group.map(t => t.code_id))),
+            evidence: first.evidence_text ?? undefined,
+            reasoning: first.reasoning ?? undefined,
+            confidence: first.confidence_score ?? undefined,
+            tdsMeta: tdsRow ? tdsRowToBackupMeta(tdsRow) : undefined,
+          };
+        });
+
+        return {
+          id: analysis.id,
+          sessionName: analysis.summary_metrics?.session_name || "Unnamed Session",
+          createdAt: analysis.created_at,
+          isAiGenerated: analysis.is_ai_generated,
+          framework: analysis.summary_metrics?.framework ?? null,
+          folderPath: analysis.summary_metrics?.folder_path ?? null,
+          videoTitle: analysis.videos?.title ?? null,
+          videoUrl: analysis.videos?.storage_path ?? analysis.summary_metrics?.video_url ?? null,
+          captions: analysis.summary_metrics?.captions ?? [],
+          tags,
+        };
+      });
+
+      const backup = { exportedAt: new Date().toISOString(), sessionCount: backupSessions.length, sessions: backupSessions };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `full_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to export full backup.");
+    } finally {
+      setIsExportingAll(false);
+    }
+  };
 
   const toggleFolder = (path: string) => {
     setCollapsedFolders(prev => {
@@ -339,14 +484,24 @@ export function SessionList({ sessions: initialSessions }: { sessions: SessionRo
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="flex rounded-xl border border-border overflow-hidden w-fit">
-            <button onClick={() => setViewMode("flat")}
-              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors ${viewMode === "flat" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-secondary"}`}>
-              <List size={14} /> Flat
-            </button>
-            <button onClick={() => setViewMode("folders")}
-              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors ${viewMode === "folders" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-secondary"}`}>
-              <FolderTreeIcon size={14} /> Folders
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex rounded-xl border border-border overflow-hidden w-fit">
+              <button onClick={() => setViewMode("flat")}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors ${viewMode === "flat" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-secondary"}`}>
+                <List size={14} /> Flat
+              </button>
+              <button onClick={() => setViewMode("folders")}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors ${viewMode === "folders" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-secondary"}`}>
+                <FolderTreeIcon size={14} /> Folders
+              </button>
+            </div>
+            <button
+              onClick={handleExportAll}
+              disabled={isExportingAll}
+              title="Download a full JSON backup of every session, tag, and TDS reasoning in the system"
+              className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground bg-secondary hover:bg-secondary/80 px-3 py-2 rounded-xl transition-all border border-border disabled:opacity-50"
+            >
+              <Download size={14} /> {isExportingAll ? "Exporting…" : "Backup All (JSON)"}
             </button>
           </div>
 
