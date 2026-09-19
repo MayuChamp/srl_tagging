@@ -1302,6 +1302,7 @@ function TaggingModeInner() {
           m.confidence >= 0.8 ? "חזק" :
           m.confidence >= 0.5 ? "בינוני" : "חלש",
         "Evidence": m.evidence || "",
+        "Reasoning (נימוק)": m.reasoning || "",
         // TDS Meta columns
         "TDS Class":          tds?.basicClass ?? "",
         "META_INTRO":         tds ? (tds.metaIntro ? "כן" : "לא") : "",
@@ -1329,6 +1330,7 @@ function TaggingModeInner() {
       { wch: 36 },  // Codes
       { wch: 10 },  // Strength
       { wch: 50 },  // Evidence
+      { wch: 50 },  // Reasoning (נימוק)
       { wch: 10 },  // TDS Class
       { wch: 12 },  // META_INTRO
       { wch: 18 },  // META_INTRO Type
