@@ -23,3 +23,10 @@ test("resource IDs reject paths and malformed query values", () => {
     assert.equal(isUuid(value), false);
   }
 });
+
+test("macro analysis is explicit and backward compatible", () => {
+  const base = { interval_seconds: 60, frames_per_window: 3, adaptive_video: true };
+  assert.deepEqual(parseEnvironmentConfig(base), base);
+  for (const value of [true, false]) assert.deepEqual(parseEnvironmentConfig({ ...base, macro_analysis: value }), { ...base, macro_analysis: value });
+  for (const value of [null, "true", 1]) assert.equal(parseEnvironmentConfig({ ...base, macro_analysis: value }), null);
+});

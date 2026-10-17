@@ -26,40 +26,40 @@ export default async function SessionsLibrary() {
   const withVideo = sessionList.filter(s => s.video_id || s.summary_metrics?.video_url).length;
 
   const statCards = [
-    { label: "Sessions",    value: sessionList.length, icon: BookOpen, color: "#6d6cf9" },
-    { label: "Total Tags",  value: totalTags,          icon: Tag,      color: "#8b5cf6" },
-    { label: "With Video",  value: withVideo,          icon: Video,    color: "#10b981" },
+    { label: "Sessions",    value: sessionList.length, icon: BookOpen, tone: "tone-primary" },
+    { label: "Total Tags",  value: totalTags,          icon: Tag,      tone: "tone-info" },
+    { label: "With Video",  value: withVideo,          icon: Video,    tone: "tone-success" },
   ];
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
+    <div className="page space-y-6 lg:space-y-8">
 
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-[28px] font-bold tracking-tight">Session Library</h1>
-          <p className="text-muted-foreground mt-1 text-sm">All saved manual tagging sessions.</p>
+      <div className="page-header">
+        <div className="min-w-0">
+          <h1 className="page-title">Session Library</h1>
+          <p className="page-subtitle">All saved manual tagging sessions.</p>
         </div>
         <Link
           href="/tagging"
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-all glow-primary hover:scale-[1.02] active:scale-[0.98]"
+          className="btn btn-primary shrink-0"
         >
           <Plus size={16} /> New Session
         </Link>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
         {statCards.map((stat, i) => (
-          <div key={i} className="bg-card border border-border rounded-2xl overflow-hidden shadow-[var(--shadow-sm)]">
-            <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${stat.color}70, ${stat.color}20)` }} />
-            <div className="p-5 flex items-center gap-4">
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${stat.color}15` }}>
-                <stat.icon size={19} style={{ color: stat.color }} />
+          <div key={i} className="card overflow-hidden min-w-0">
+            <div className={`stat-strip ${stat.tone}`} />
+            <div className="p-3 sm:p-5 flex items-center gap-3 sm:gap-4">
+              <div className={`icon-tile icon-tile-md hidden sm:grid ${stat.tone}`}>
+                <stat.icon size={18} />
               </div>
-              <div>
-                <p className="text-muted-foreground text-sm">{stat.label}</p>
-                <p className="text-2xl font-extrabold tracking-tight mt-0.5">{stat.value}</p>
+              <div className="min-w-0">
+                <p className="stat-label">{stat.label}</p>
+                <p className="stat-value mt-0.5">{stat.value}</p>
               </div>
             </div>
           </div>

@@ -30,6 +30,7 @@ test("migration, RLS, private evidence, atomic queue and append-only review", as
         $$SELECT (string_to_array(name,'/'))[1:array_length(string_to_array(name,'/'),1)-1]$$;
     `);
     await db.exec(await readFile(new URL("../src/lib/supabase/migrations/0003_learning_environment.sql", import.meta.url), "utf8"));
+    await db.exec(await readFile(new URL("../src/lib/supabase/migrations/0004_environment_macro_reviews.sql", import.meta.url), "utf8"));
     const role = async (name, user = owner) => {
       await db.exec(`RESET ROLE; SET ROLE ${name};`);
       await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)", [user]);
@@ -93,6 +94,21 @@ test("migration, RLS, private evidence, atomic queue and append-only review", as
       await assert.rejects(db.query("UPDATE environment_reviews SET verdict='accepted'"), /permission denied/);
       await assert.rejects(db.query("DELETE FROM environment_reviews"), /permission denied/);
       await assert.rejects(db.query("UPDATE environment_observations SET observation='{}'"), /permission denied/);
+    });
+    await t.test("macro reviews require an owned existing episode and preserve model output", async () => {
+      await role("service_role");
+      await db.query("UPDATE environment_runs SET summary=$1 WHERE id=$2", [{ macro: { episodes: [{ id: "episode-1" }] } }, run]);
+      await role("authenticated", other);
+      await assert.rejects(db.query("INSERT INTO environment_macro_reviews(run_id,reviewer_id,episode_id,verdict) VALUES ($1,$2,'episode-1','accepted')", [run, other]), /row-level security/);
+      await role("authenticated");
+      await assert.rejects(db.query("INSERT INTO environment_macro_reviews(run_id,reviewer_id,episode_id,verdict) VALUES ($1,$2,'invented','accepted')", [run, owner]), /row-level security/);
+      await assert.rejects(db.query("INSERT INTO environment_macro_reviews(run_id,reviewer_id,episode_id,verdict) VALUES ($1,$2,'episode-1','accepted')", [run, other]), /row-level security/);
+      await db.query("INSERT INTO environment_macro_reviews(run_id,reviewer_id,episode_id,verdict,notes) VALUES ($1,$2,'episode-1','needs_correction','גבולות האפיזודה דורשים תיקון')", [run, owner]);
+      assert.equal((await db.query("SELECT * FROM environment_macro_reviews")).rows.length, 1);
+      await assert.rejects(db.query("UPDATE environment_macro_reviews SET verdict='accepted'"), /permission denied/);
+      await assert.rejects(db.query("DELETE FROM environment_macro_reviews"), /permission denied/);
+      await role("authenticated", other);
+      assert.equal((await db.query("SELECT * FROM environment_macro_reviews")).rows.length, 0);
     });
   } finally { await db.close(); }
 });

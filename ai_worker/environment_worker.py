@@ -66,7 +66,7 @@ def download_video(url, target, supabase_url):
                 output.write(block)
 
 
-def analyze_window(video, window, transcript, models, workdir, adaptive=True, clip_budget=None, heartbeat=None):
+def analyze_window(video, window, transcript, models, workdir, adaptive=True, clip_budget=None, heartbeat=None, macro_enabled=False):
     evidence = transcript_evidence(transcript, window["start"], window["end"])
     media = []
     models.usage = []
@@ -122,6 +122,23 @@ def analyze_window(video, window, transcript, models, workdir, adaptive=True, cl
                                    direct_support_also_present=False,
                                    rationale="נדרשת בדיקה אנושית: " + reasons)
             interpretation["limitations"].append("ממצאים שסומנו בביקורת הועברו למצב לא ניתן לקבוע; נדרשת בדיקה אנושית.")
+    if macro_enabled:
+        try:
+            artifacts = models.inspect_artifacts(window, media)
+            from environment_macro import VISUAL_ARTIFACT_SCHEMA
+            from environment_protocol import validate_schema
+            validate_schema(artifacts, VISUAL_ARTIFACT_SCHEMA)
+            visual_ids = {e['id'] for e in evidence if e['kind'] in ('image', 'video')}
+            for artifact in artifacts['artifacts']:
+                if not artifact['evidence_ids'] or not set(artifact['evidence_ids']) <= visual_ids:
+                    raise ValueError('Invalid visual artifact references')
+            observation['visual_artifacts'] = artifacts['artifacts']
+        except Exception as artifact_error:
+            observation['visual_artifacts'] = []
+            audit['artifact_error'] = 'Visual artifact extraction failed (%s)' % type(artifact_error).__name__
+            observation['limitations'].append('חילוץ הרכיבים החזותיים נכשל; התצפית המקורית נשמרה.')
+        if heartbeat:
+            heartbeat()
     row = {"window_index": window["index"], "start_time": window["start"],
            "end_time": window["end"], "status": "completed", "observation": observation,
            "interpretation": interpretation, "evidence": evidence, "audit": audit,
@@ -146,6 +163,8 @@ def process_run(db, run):
         config = run["config"]
         # Validate before downloading or making billable model calls.
         sampling_windows(1, config["interval_seconds"], config["frames_per_window"])
+        if type(config.get("macro_analysis", False)) is not bool:
+            raise ValueError("Invalid macro configuration")
         if type(config.get("adaptive_video")) is not bool:
             raise ValueError("Invalid adaptive video configuration")
         video = db.table("videos").select("storage_path").eq("id", run["video_id"]).single().execute().data
@@ -185,7 +204,7 @@ def process_run(db, run):
                 try:
                     with tempfile.TemporaryDirectory(dir=directory, prefix="window-") as workdir:
                         row, media = analyze_window(path, window, transcript, models, workdir,
-                                                    config["adaptive_video"], clip_budget, lambda: fenced_update(db, run, {}))
+                                                    config["adaptive_video"], clip_budget, lambda: fenced_update(db, run, {}), macro_enabled=config.get("macro_analysis", False))
                         # Check lease before publishing media; include token to avoid concurrent overwrite.
                         fenced_update(db, run, {})
                         for evidence, media_path in media:
@@ -219,6 +238,26 @@ def process_run(db, run):
             summary = summarize(rows, len(windows))
             summary["transcript_available"] = bool(transcript)
             summary["adaptive_clips"] = clips
+            summary['macro'] = {'protocol_version': 'indirect-srl-macro-v1', 'status': 'disabled'}
+            if config.get('macro_analysis', False):
+                try:
+                    from environment_macro import analyze_macro
+                    fenced_update(db, run, {})
+                    summary['macro'] = analyze_macro(rows, models, lambda: fenced_update(db, run, {}))
+                    try:
+                        from environment_overview import analyze_overview
+                        fenced_update(db, run, {})
+                        summary['macro']['lesson_overview'] = analyze_overview(
+                            rows, summary['macro'], models, config.get('tagging_snapshot'),
+                            len(windows), lambda: fenced_update(db, run, {}))
+                    except Exception as overview_error:
+                        summary['macro']['lesson_overview'] = {'status': 'failed',
+                            'error': 'Lesson overview failed (%s); episode results are preserved.' % type(overview_error).__name__}
+                    summary['macro']['usage'] = list(models.usage)
+                except Exception as macro_error:
+                    summary['macro'] = {'protocol_version': 'indirect-srl-macro-v1', 'status': 'failed',
+                        'error': 'Macro analysis failed (%s); sampled observations are preserved.' % type(macro_error).__name__,
+                        'usage': list(models.usage)}
             status = "completed" if summary["failed_windows"] == 0 else "completed_with_errors"
             if summary["completed_windows"] == 0 or summary["unprocessed_windows"]:
                 status = "failed"

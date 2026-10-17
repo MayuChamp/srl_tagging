@@ -5,6 +5,7 @@ import {
   Search, Trash2, RefreshCw, Save, X, AlertTriangle, CheckCircle2,
   Video, MoreVertical, Eye, Clock, Folder, FolderOpen, FolderInput,
   ChevronRight, ChevronDown, List, FolderTree as FolderTreeIcon, Tag,
+  Loader2, Timer,
 } from "lucide-react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
@@ -50,11 +51,13 @@ function countVideos(node: FolderNode): number {
 
 type Framework = "ATES" | "SCOPE";
 
-const STATUS: Record<string, { label: string; color: string; bg: string; border: string; dot: string }> = {
-  completed: { label: "Completed",  color: "#10b981", bg: "rgba(16,185,129,0.12)",  border: "rgba(16,185,129,0.3)",  dot: "bg-emerald-400" },
-  processing: { label: "Processing", color: "#6d6cf9", bg: "rgba(109,108,249,0.12)", border: "rgba(109,108,249,0.3)", dot: "bg-indigo-400 animate-pulse" },
-  pending:    { label: "Pending",    color: "#f59e0b", bg: "rgba(245,158,11,0.12)",  border: "rgba(245,158,11,0.3)",  dot: "bg-amber-400" },
-  failed:     { label: "Failed",     color: "#f04444", bg: "rgba(240,68,68,0.12)",   border: "rgba(240,68,68,0.3)",   dot: "bg-red-400" },
+// Status → semantic tone class (badge, status-dot, icon tile, accent strip,
+// progress fill), so the colours follow the light/dark theme and pass AA.
+const STATUS: Record<string, { label: string; tone: string; pulse?: boolean }> = {
+  completed:  { label: "Completed",  tone: "tone-success" },
+  processing: { label: "Processing", tone: "tone-primary", pulse: true },
+  pending:    { label: "Pending",    tone: "tone-warning" },
+  failed:     { label: "Failed",     tone: "tone-danger" },
 };
 
 function relativeDate(dateStr: string) {
@@ -69,6 +72,21 @@ function relativeDate(dateStr: string) {
 
 function fmtDur(s: number) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+// Declared at module scope so the modal is not re-created (and remounted) on
+// every render: typing in a modal input keeps the caret and datalist popup.
+function ModalBase({ children, onClose, labelledBy }: { children: React.ReactNode; onClose: () => void; labelledBy: string }) {
+  return (
+    <div className="modal-root">
+      <div className="modal-backdrop" onClick={onClose} />
+      <div className="modal-panel" role="dialog" aria-modal="true" aria-labelledby={labelledBy}>{children}</div>
+    </div>
+  );
+}
+
+function Spinner() {
+  return <Loader2 className="size-3.5 animate-spin" aria-hidden />;
 }
 
 export function VideoSearch({ videos: initialVideos }: { videos: VideoItem[] }) {
@@ -206,15 +224,6 @@ export function VideoSearch({ videos: initialVideos }: { videos: VideoItem[] }) 
 
   const knownFolders = Array.from(new Set(videos.map(v => v.folder_path).filter(Boolean) as string[])).sort();
 
-  const ModalBase = ({ children, onClose }: { children: React.ReactNode; onClose: () => void }) => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md mx-4">{children}</div>
-    </div>
-  );
-
-  const Spinner = () => <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />;
-
   const renderCard = (video: VideoItem) => {
     const sk = video.status ?? "pending";
     const s = STATUS[sk] ?? STATUS.pending;
@@ -222,26 +231,32 @@ export function VideoSearch({ videos: initialVideos }: { videos: VideoItem[] }) 
 
     return (
       <div key={video.id}
-        className="bg-card border border-border rounded-2xl overflow-hidden shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] hover:-translate-y-0.5 transition-all group"
+        className={`card relative group transition-shadow duration-200 hover:shadow-md ${isMenuOpen ? "z-30" : ""}`}
       >
-        {/* Status accent bar */}
-        <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${s.color}80, ${s.color}20)` }} />
+        {/* Status accent bar (clipped to the card's rounded top; the card itself
+            no longer clips, so the action menu can overflow it) */}
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-4 overflow-hidden rounded-t-[calc(1rem-1px)]">
+          <div className={`stat-strip ${s.tone}`} />
+        </div>
 
         <div className="p-4">
           {/* Header row */}
           <div className="flex items-start gap-3">
-            <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${s.color}12` }}>
-              <Video size={18} style={{ color: s.color }} />
+            <div className={`icon-tile icon-tile-md ${s.tone}`}>
+              <Video size={18} aria-hidden />
             </div>
 
             <div className="flex-1 min-w-0 mt-0.5">
-              <p className="font-semibold text-[14px] leading-tight truncate">{video.title || "Untitled Video"}</p>
-              <div className="flex items-center gap-1.5 mt-1.5">
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.dot}`} />
-                <span className="text-xs font-medium" style={{ color: s.color }}>{s.label}</span>
+              <p className="font-semibold text-sm leading-tight truncate" dir="auto" title={video.title ?? undefined}>{video.title || "Untitled Video"}</p>
+              <div className="flex items-center gap-2 mt-1.5 min-w-0">
+                <span className={`badge shrink-0 ${s.tone}`}>
+                  <span className={`status-dot ${s.tone} ${s.pulse ? "animate-pulse" : ""}`} aria-hidden />
+                  {s.label}
+                </span>
                 {viewMode === "flat" && video.folder_path && (
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground truncate">
-                    <Folder size={10} className="shrink-0" /> {video.folder_path}
+                  <span className="flex items-center gap-1 min-w-0 text-xs text-muted-foreground">
+                    <Folder size={11} className="shrink-0" aria-hidden />
+                    <span className="truncate" dir="auto">{video.folder_path}</span>
                   </span>
                 )}
               </div>
@@ -250,37 +265,38 @@ export function VideoSearch({ videos: initialVideos }: { videos: VideoItem[] }) 
             {/* Action menu */}
             <div className="relative shrink-0">
               <button onClick={() => setOpenMenuId(isMenuOpen ? null : video.id)}
-                className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-all">
-                <MoreVertical size={15} />
+                aria-label="Video actions" aria-haspopup="menu" aria-expanded={isMenuOpen}
+                className={`icon-btn ${isMenuOpen ? "bg-secondary text-foreground" : ""}`}>
+                <MoreVertical size={15} aria-hidden />
               </button>
               {isMenuOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
-                  <div className="absolute right-0 top-9 z-20 bg-card border border-border rounded-xl shadow-[var(--shadow-lg)] py-1.5 min-w-[170px] overflow-hidden">
-                    <Link href={`/tagging?video=${video.id}`} onClick={() => setOpenMenuId(null)}
-                      className="flex items-center gap-2.5 px-3.5 py-2 text-[13px] font-medium text-primary hover:bg-primary/10 transition-colors">
-                      <Tag size={14} className="text-primary" /> Start Tagging
+                  <div role="menu" aria-label="Video actions" className="menu absolute end-0 top-9 z-20">
+                    <Link href={`/tagging?video=${video.id}`} onClick={() => setOpenMenuId(null)} role="menuitem"
+                      className="menu-item font-medium">
+                      <Tag size={14} className="text-primary" aria-hidden /> Start Tagging
                     </Link>
-                    <Link href={`/videos/${video.id}`} onClick={() => setOpenMenuId(null)}
-                      className="flex items-center gap-2.5 px-3.5 py-2 text-[13px] hover:bg-secondary transition-colors">
-                      <Eye size={14} className="text-muted-foreground" /> View details
+                    <Link href={`/videos/${video.id}`} onClick={() => setOpenMenuId(null)} role="menuitem"
+                      className="menu-item">
+                      <Eye size={14} className="text-muted-foreground" aria-hidden /> View details
                     </Link>
-                    <button onClick={() => { setSaveSessionVideoId(video.id); setSessionName(""); setOpenMenuId(null); }}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] hover:bg-secondary transition-colors">
-                      <Save size={14} className="text-muted-foreground" /> Save as session
+                    <button onClick={() => { setSaveSessionVideoId(video.id); setSessionName(""); setOpenMenuId(null); }} role="menuitem"
+                      className="menu-item">
+                      <Save size={14} className="text-muted-foreground" aria-hidden /> Save as session
                     </button>
-                    <button onClick={() => { setReanalyzeVideoId(video.id); setSelectedFramework("ATES"); setOpenMenuId(null); }}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] hover:bg-secondary transition-colors">
-                      <RefreshCw size={14} className="text-muted-foreground" /> Re-analyze
+                    <button onClick={() => { setReanalyzeVideoId(video.id); setSelectedFramework("ATES"); setOpenMenuId(null); }} role="menuitem"
+                      className="menu-item">
+                      <RefreshCw size={14} className="text-muted-foreground" aria-hidden /> Re-analyze
                     </button>
-                    <button onClick={() => { setMoveFolderVideoId(video.id); setMoveFolderValue(video.folder_path || ""); setOpenMenuId(null); }}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] hover:bg-secondary transition-colors">
-                      <FolderInput size={14} className="text-muted-foreground" /> Move to folder
+                    <button onClick={() => { setMoveFolderVideoId(video.id); setMoveFolderValue(video.folder_path || ""); setOpenMenuId(null); }} role="menuitem"
+                      className="menu-item">
+                      <FolderInput size={14} className="text-muted-foreground" aria-hidden /> Move to folder
                     </button>
-                    <div className="h-px bg-border mx-2 my-1" />
-                    <button onClick={() => { setConfirmDeleteId(video.id); setOpenMenuId(null); }}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] text-destructive hover:bg-destructive/10 transition-colors">
-                      <Trash2 size={14} /> Delete
+                    <div role="separator" className="menu-sep" />
+                    <button onClick={() => { setConfirmDeleteId(video.id); setOpenMenuId(null); }} role="menuitem"
+                      className="menu-item menu-item-danger">
+                      <Trash2 size={14} aria-hidden /> Delete
                     </button>
                   </div>
                 </>
@@ -294,14 +310,14 @@ export function VideoSearch({ videos: initialVideos }: { videos: VideoItem[] }) 
             const pct = prog ? Math.round((prog.current / prog.total) * 100) : null;
             return (
               <div className="mt-3 space-y-1.5">
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>{prog ? `chunk ${prog.current}/${prog.total}` : "מתחיל…"}</span>
+                <div className="flex justify-between text-xs text-muted-foreground tabular-nums">
+                  <span dir="auto" lang={prog ? undefined : "he"}>{prog ? `chunk ${prog.current}/${prog.total}` : "מתחיל…"}</span>
                   {pct !== null && <span>{pct}%</span>}
                 </div>
-                <div className="h-1.5 bg-secondary/40 rounded-full overflow-hidden">
+                <div className="meter">
                   <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${pct ?? 0}%`, background: s.color }}
+                    className={`meter-fill ${s.tone} transition-all duration-500 ${pct === null ? "meter-indeterminate" : ""}`}
+                    style={pct === null ? undefined : { width: `${pct}%` }}
                   />
                 </div>
               </div>
@@ -309,12 +325,14 @@ export function VideoSearch({ videos: initialVideos }: { videos: VideoItem[] }) 
           })()}
 
           {/* Metadata row */}
-          <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/50 text-xs text-muted-foreground">
+          <div className="flex items-center justify-between mt-4 pt-3 border-t border-border text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <Clock size={11} />
+              <Clock size={11} aria-hidden />
               {video.created_at ? relativeDate(video.created_at) : "—"}
             </span>
-            <span className="font-mono">
+            <span className="flex items-center gap-1.5 font-mono tabular-nums">
+              <Timer size={11} aria-hidden />
+              <span className="sr-only">Duration</span>
               {video.duration_seconds ? fmtDur(video.duration_seconds) : "—"}
             </span>
           </div>
@@ -322,12 +340,12 @@ export function VideoSearch({ videos: initialVideos }: { videos: VideoItem[] }) 
           {/* CTA */}
           <div className="mt-3 flex gap-2">
             <Link href={`/tagging?video=${video.id}`}
-              className="flex-1 flex items-center justify-center gap-1.5 text-[13px] font-semibold text-primary-foreground bg-primary hover:bg-primary/90 py-2 rounded-xl transition-all shadow-sm">
-              <Tag size={13} /> Start Tagging
+              className="btn btn-primary btn-sm h-8 flex-1">
+              <Tag size={13} aria-hidden /> Start Tagging
             </Link>
             <Link href={`/videos/${video.id}`}
-              className="flex-1 flex items-center justify-center gap-1.5 text-[13px] font-semibold text-muted-foreground bg-secondary hover:bg-secondary/80 py-2 rounded-xl transition-all border border-border">
-              <Eye size={13} /> View Analysis
+              className="btn btn-secondary btn-sm h-8 flex-1">
+              <Eye size={13} aria-hidden /> View Analysis
             </Link>
           </div>
         </div>
@@ -341,14 +359,16 @@ export function VideoSearch({ videos: initialVideos }: { videos: VideoItem[] }) 
     const isRoot = depth === 0 && node.path === "";
 
     return (
-      <div key={node.path || "__root__"} className={depth > 0 ? "mt-3 pl-4 border-l border-border/60" : "space-y-3"}>
+      <div key={node.path || "__root__"} className={depth > 0 ? "mt-3 ps-4 border-s border-border" : "space-y-3"}>
         {!isRoot && (
-          <button onClick={() => toggleFolder(node.path)}
-            className="flex items-center gap-2 text-sm font-semibold text-foreground hover:text-primary transition-colors py-1">
-            {collapsedFolders.has(node.path) ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
-            <FolderOpen size={15} className="text-muted-foreground" />
-            {node.name}
-            <span className="text-xs font-normal text-muted-foreground">
+          <button onClick={() => toggleFolder(node.path)} aria-expanded={!collapsedFolders.has(node.path)}
+            className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-start text-sm font-semibold text-foreground hover:bg-foreground/8 transition-colors cursor-pointer">
+            {collapsedFolders.has(node.path)
+              ? <ChevronRight size={15} className="shrink-0 text-muted-foreground" aria-hidden />
+              : <ChevronDown size={15} className="shrink-0 text-muted-foreground" aria-hidden />}
+            <FolderOpen size={15} className="shrink-0 text-muted-foreground" aria-hidden />
+            <span className="truncate" dir="auto">{node.name}</span>
+            <span className="shrink-0 text-xs font-normal text-muted-foreground tabular-nums">
               ({sortedVideos.length + childFolders.reduce((sum, c) => sum + countVideos(c), 0)})
             </span>
           </button>
@@ -356,6 +376,9 @@ export function VideoSearch({ videos: initialVideos }: { videos: VideoItem[] }) 
         {(isRoot || !collapsedFolders.has(node.path)) && (
           <div className={isRoot ? "space-y-3" : "mt-2 space-y-3"}>
             {childFolders.map(child => renderFolderSection(child, depth + 1))}
+            {isRoot && childFolders.length > 0 && sortedVideos.length > 0 && (
+              <p className="eyebrow pt-3 px-2">Uncategorized</p>
+            )}
             {sortedVideos.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {sortedVideos.map(renderCard)}
@@ -371,153 +394,155 @@ export function VideoSearch({ videos: initialVideos }: { videos: VideoItem[] }) 
     <>
       {/* Modals */}
       {confirmDeleteId && (
-        <ModalBase onClose={() => !deletingId && setConfirmDeleteId(null)}>
-          <div className="bg-card border border-border rounded-2xl shadow-[var(--shadow-lg)] p-6 space-y-4">
-            <div className="flex items-center gap-3 text-destructive">
-              <div className="w-10 h-10 rounded-xl bg-destructive/12 flex items-center justify-center">
-                <AlertTriangle size={18} />
-              </div>
-              <div>
-                <h2 className="font-semibold text-base">Delete Video</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">This action cannot be undone</p>
-              </div>
+        <ModalBase labelledBy="delete-video-title" onClose={() => !deletingId && setConfirmDeleteId(null)}>
+          <div className="modal-header justify-start">
+            <div className="icon-tile icon-tile-md tone-danger">
+              <AlertTriangle size={18} aria-hidden />
             </div>
+            <div className="min-w-0">
+              <h2 id="delete-video-title" className="modal-title">Delete Video</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">This action cannot be undone</p>
+            </div>
+          </div>
+          <div className="modal-body">
             <p className="text-sm text-muted-foreground">All analyses and tags linked to this video will also be permanently deleted.</p>
-            <div className="flex gap-2 pt-1">
-              <button onClick={() => setConfirmDeleteId(null)} disabled={!!deletingId} className="flex-1 px-4 py-2.5 text-sm rounded-xl border border-border hover:bg-secondary transition-all disabled:opacity-50">Cancel</button>
-              <button onClick={() => handleDelete(confirmDeleteId)} disabled={!!deletingId} className="flex-1 px-4 py-2.5 text-sm rounded-xl bg-destructive text-white hover:bg-destructive/90 flex items-center justify-center gap-2 disabled:opacity-50">
-                {deletingId ? <><Spinner />Deleting…</> : <><Trash2 size={14} />Delete</>}
-              </button>
-            </div>
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => setConfirmDeleteId(null)} disabled={!!deletingId} className="btn btn-outline flex-1">Cancel</button>
+            <button onClick={() => handleDelete(confirmDeleteId)} disabled={!!deletingId} className="btn btn-destructive flex-1">
+              {deletingId ? <><Spinner />Deleting…</> : <><Trash2 size={14} aria-hidden />Delete</>}
+            </button>
           </div>
         </ModalBase>
       )}
 
       {reanalyzeVideoId && (
-        <ModalBase onClose={() => !isReanalyzing && setReanalyzeVideoId(null)}>
-          <div className="bg-card border border-border rounded-2xl shadow-[var(--shadow-lg)] overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <h2 className="font-semibold text-base flex items-center gap-2"><RefreshCw size={16} className="text-primary" /> Re-analyze</h2>
-              <button onClick={() => setReanalyzeVideoId(null)} disabled={isReanalyzing} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-secondary text-muted-foreground transition-all"><X size={16} /></button>
+        <ModalBase labelledBy="reanalyze-title" onClose={() => !isReanalyzing && setReanalyzeVideoId(null)}>
+          <div className="modal-header">
+            <h2 id="reanalyze-title" className="modal-title"><RefreshCw size={16} className="text-primary" aria-hidden /> Re-analyze</h2>
+            <button onClick={() => setReanalyzeVideoId(null)} disabled={isReanalyzing} aria-label="Close" className="icon-btn"><X size={16} aria-hidden /></button>
+          </div>
+          <div className="modal-body space-y-4">
+            <p className="text-sm text-muted-foreground">Choose the analysis framework. Any existing AI analysis will be replaced.</p>
+            <div className="grid grid-cols-2 gap-3">
+              {(["ATES", "SCOPE"] as Framework[]).map(fw => (
+                <button key={fw} onClick={() => setSelectedFramework(fw)} aria-pressed={selectedFramework === fw}
+                  className={`p-4 rounded-xl border text-start transition-colors cursor-pointer ${selectedFramework === fw ? "border-primary bg-primary/10 ring-1 ring-primary" : "border-input hover:border-primary/40 hover:bg-secondary/50"}`}>
+                  <p className="font-bold text-sm">{fw}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{fw === "ATES" ? "Teacher & Student SRL" : "Science Classroom Protocol"}</p>
+                </button>
+              ))}
             </div>
-            <div className="p-5 space-y-4">
-              <p className="text-sm text-muted-foreground">Choose the analysis framework. Any existing AI analysis will be replaced.</p>
-              <div className="grid grid-cols-2 gap-3">
-                {(["ATES", "SCOPE"] as Framework[]).map(fw => (
-                  <button key={fw} onClick={() => setSelectedFramework(fw)}
-                    className={`p-4 rounded-xl border-2 text-left transition-all ${selectedFramework === fw ? "border-primary bg-primary/10" : "border-border hover:border-primary/40"}`}>
-                    <p className="font-bold text-sm">{fw}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{fw === "ATES" ? "Teacher & Student SRL" : "Science Classroom Protocol"}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex gap-2 px-5 pb-5">
-              <button onClick={() => setReanalyzeVideoId(null)} disabled={isReanalyzing} className="flex-1 px-4 py-2.5 text-sm rounded-xl border border-border hover:bg-secondary transition-all disabled:opacity-50">Cancel</button>
-              <button onClick={handleReanalyze} disabled={isReanalyzing} className="flex-1 px-4 py-2.5 text-sm rounded-xl bg-primary text-white hover:bg-primary/90 flex items-center justify-center gap-2 disabled:opacity-50">
-                {isReanalyzing ? <><Spinner />Queuing…</> : <><RefreshCw size={14} />Re-analyze</>}
-              </button>
-            </div>
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => setReanalyzeVideoId(null)} disabled={isReanalyzing} className="btn btn-outline flex-1">Cancel</button>
+            <button onClick={handleReanalyze} disabled={isReanalyzing} className="btn btn-primary flex-1">
+              {isReanalyzing ? <><Spinner />Queuing…</> : <><RefreshCw size={14} aria-hidden />Re-analyze</>}
+            </button>
           </div>
         </ModalBase>
       )}
 
       {saveSessionVideoId && (
-        <ModalBase onClose={() => !isSavingSession && setSaveSessionVideoId(null)}>
-          <div className="bg-card border border-border rounded-2xl shadow-[var(--shadow-lg)] overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <h2 className="font-semibold text-base flex items-center gap-2"><Save size={16} className="text-primary" /> Save as Session</h2>
-              <button onClick={() => setSaveSessionVideoId(null)} disabled={isSavingSession} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-secondary text-muted-foreground transition-all"><X size={16} /></button>
-            </div>
-            <div className="p-5 space-y-3">
-              <p className="text-sm text-muted-foreground">Save the AI analysis as an editable session in the Session Library.</p>
-              <input type="text" value={sessionName} onChange={e => setSessionName(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleSaveSession()}
-                placeholder={`session_${new Date().toISOString().slice(0, 10)}`}
-                className="w-full bg-secondary/60 border border-border rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
-                autoFocus />
-            </div>
-            <div className="flex gap-2 px-5 pb-5">
-              <button onClick={() => setSaveSessionVideoId(null)} disabled={isSavingSession} className="flex-1 px-4 py-2.5 text-sm rounded-xl border border-border hover:bg-secondary transition-all disabled:opacity-50">Cancel</button>
-              <button onClick={handleSaveSession} disabled={isSavingSession} className="flex-1 px-4 py-2.5 text-sm rounded-xl bg-primary text-white hover:bg-primary/90 flex items-center justify-center gap-2 disabled:opacity-50">
-                {isSavingSession ? <><Spinner />Saving…</> : <><Save size={14} />Save</>}
-              </button>
-            </div>
+        <ModalBase labelledBy="save-session-title" onClose={() => !isSavingSession && setSaveSessionVideoId(null)}>
+          <div className="modal-header">
+            <h2 id="save-session-title" className="modal-title"><Save size={16} className="text-primary" aria-hidden /> Save as Session</h2>
+            <button onClick={() => setSaveSessionVideoId(null)} disabled={isSavingSession} aria-label="Close" className="icon-btn"><X size={16} aria-hidden /></button>
+          </div>
+          <div className="modal-body space-y-4">
+            <p className="text-sm text-muted-foreground">Save the AI analysis as an editable session in the Session Library.</p>
+            <input type="text" value={sessionName} onChange={e => setSessionName(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleSaveSession()}
+              placeholder={`session_${new Date().toISOString().slice(0, 10)}`}
+              aria-labelledby="save-session-title"
+              dir="auto"
+              className="field"
+              autoFocus />
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => setSaveSessionVideoId(null)} disabled={isSavingSession} className="btn btn-outline flex-1">Cancel</button>
+            <button onClick={handleSaveSession} disabled={isSavingSession} className="btn btn-primary flex-1">
+              {isSavingSession ? <><Spinner />Saving…</> : <><Save size={14} aria-hidden />Save</>}
+            </button>
           </div>
         </ModalBase>
       )}
 
       {moveFolderVideoId && (
-        <ModalBase onClose={() => !isMovingFolder && setMoveFolderVideoId(null)}>
-          <div className="bg-card border border-border rounded-2xl shadow-[var(--shadow-lg)] overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <h2 className="font-semibold text-base flex items-center gap-2"><FolderInput size={16} className="text-primary" /> Move to Folder</h2>
-              <button onClick={() => setMoveFolderVideoId(null)} disabled={isMovingFolder} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-secondary text-muted-foreground transition-all"><X size={16} /></button>
-            </div>
-            <div className="p-5 space-y-3">
-              <p className="text-sm text-muted-foreground">Use &quot;/&quot; to nest folders. Leave blank to uncategorize.</p>
-              <input type="text" value={moveFolderValue} onChange={e => setMoveFolderValue(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleMoveFolder()}
-                placeholder="e.g. Class A/Lesson 1"
-                list="known-folders"
-                className="w-full bg-secondary/60 border border-border rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
-                autoFocus />
-              <datalist id="known-folders">
-                {knownFolders.map(f => <option key={f} value={f} />)}
-              </datalist>
-            </div>
-            <div className="flex gap-2 px-5 pb-5">
-              <button onClick={() => setMoveFolderVideoId(null)} disabled={isMovingFolder} className="flex-1 px-4 py-2.5 text-sm rounded-xl border border-border hover:bg-secondary transition-all disabled:opacity-50">Cancel</button>
-              <button onClick={handleMoveFolder} disabled={isMovingFolder} className="flex-1 px-4 py-2.5 text-sm rounded-xl bg-primary text-white hover:bg-primary/90 flex items-center justify-center gap-2 disabled:opacity-50">
-                {isMovingFolder ? <><Spinner />Moving…</> : <><FolderInput size={14} />Move</>}
-              </button>
-            </div>
+        <ModalBase labelledBy="move-folder-title" onClose={() => !isMovingFolder && setMoveFolderVideoId(null)}>
+          <div className="modal-header">
+            <h2 id="move-folder-title" className="modal-title"><FolderInput size={16} className="text-primary" aria-hidden /> Move to Folder</h2>
+            <button onClick={() => setMoveFolderVideoId(null)} disabled={isMovingFolder} aria-label="Close" className="icon-btn"><X size={16} aria-hidden /></button>
+          </div>
+          <div className="modal-body space-y-4">
+            <p className="text-sm text-muted-foreground">Use &quot;/&quot; to nest folders. Leave blank to uncategorize.</p>
+            <input type="text" value={moveFolderValue} onChange={e => setMoveFolderValue(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleMoveFolder()}
+              placeholder="e.g. Class A/Lesson 1"
+              list="known-folders"
+              aria-labelledby="move-folder-title"
+              dir="auto"
+              className="field"
+              autoFocus />
+            <datalist id="known-folders">
+              {knownFolders.map(f => <option key={f} value={f} />)}
+            </datalist>
+          </div>
+          <div className="modal-footer">
+            <button onClick={() => setMoveFolderVideoId(null)} disabled={isMovingFolder} className="btn btn-outline flex-1">Cancel</button>
+            <button onClick={handleMoveFolder} disabled={isMovingFolder} className="btn btn-primary flex-1">
+              {isMovingFolder ? <><Spinner />Moving…</> : <><FolderInput size={14} aria-hidden />Move</>}
+            </button>
           </div>
         </ModalBase>
       )}
 
-      {/* Toasts */}
-      {savedSessionId && (
-        <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white px-4 py-3 rounded-xl shadow-[var(--shadow-lg)] flex items-center gap-3 text-sm">
-          <CheckCircle2 size={16} /> Session saved!{" "}
-          <Link href={`/sessions/${savedSessionId}`} className="underline font-medium">View →</Link>
-        </div>
-      )}
-      {reanalyzedToast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-primary text-white px-4 py-3 rounded-xl shadow-[var(--shadow-lg)] flex items-center gap-3 text-sm">
-          <RefreshCw size={16} /> Re-analysis queued — check back soon.
-        </div>
-      )}
+      {/* Toasts (one stack, so the two never overlap) */}
+      <div className="toast-stack" role="status" aria-live="polite">
+        {savedSessionId && (
+          <div className="toast toast-success animate-fade-in">
+            <CheckCircle2 size={16} aria-hidden /> Session saved!{" "}
+            <Link href={`/sessions/${savedSessionId}`} className="underline font-medium focus-visible:outline-current">View →</Link>
+          </div>
+        )}
+        {reanalyzedToast && (
+          <div className="toast toast-info animate-fade-in">
+            <RefreshCw size={16} aria-hidden /> Re-analysis queued — check back soon.
+          </div>
+        )}
+      </div>
 
       {/* Search + view toggle */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
-          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <input type="text" value={query} onChange={e => setQuery(e.target.value)}
             placeholder="Search videos…"
-            className="w-full bg-card border border-border rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" />
+            aria-label="Search videos"
+            dir="auto"
+            className="field pl-10" />
         </div>
-        <div className="flex rounded-xl border border-border overflow-hidden shrink-0">
-          <button onClick={() => setViewMode("flat")}
-            className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold transition-colors ${viewMode === "flat" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-secondary"}`}>
-            <List size={14} /> Flat
+        <div role="group" aria-label="View mode" className="segmented self-start sm:self-auto shrink-0">
+          <button onClick={() => setViewMode("flat")} aria-pressed={viewMode === "flat"}
+            className="segmented-item h-8">
+            <List size={14} aria-hidden /> Flat
           </button>
-          <button onClick={() => setViewMode("folders")}
-            className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold transition-colors ${viewMode === "folders" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-secondary"}`}>
-            <FolderTreeIcon size={14} /> Folders
+          <button onClick={() => setViewMode("folders")} aria-pressed={viewMode === "folders"}
+            className="segmented-item h-8">
+            <FolderTreeIcon size={14} aria-hidden /> Folders
           </button>
         </div>
       </div>
 
       {/* Empty state */}
       {filtered.length === 0 && (
-        <div className="bg-card border border-dashed border-border rounded-2xl py-20 flex flex-col items-center gap-4 text-muted-foreground">
-          <div className="w-16 h-16 rounded-2xl bg-secondary flex items-center justify-center">
-            <Video size={28} className="opacity-30" />
+        <div className="empty-state py-16">
+          <div className="empty-state-icon">
+            <Video size={22} aria-hidden />
           </div>
-          <div className="text-center">
-            <p className="font-medium text-foreground">{query ? `No results for "${query}"` : "No videos yet"}</p>
-            <p className="text-sm mt-1">{query ? "Try a different search term" : "Upload your first teaching session"}</p>
+          <div>
+            <p className="empty-state-title">{query ? `No results for "${query}"` : "No videos yet"}</p>
+            <p className="empty-state-text mt-1">{query ? "Try a different search term" : "Upload your first teaching session"}</p>
           </div>
         </div>
       )}

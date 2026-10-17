@@ -1,55 +1,143 @@
 @import "tailwindcss";
 
-/* ── Dark mode (default) ─────────────────────────────────────────────────── */
-:root {
-  --background: #08080d;
-  --foreground: #f0effe;
-  --card: #111118;
-  --card-foreground: #f0effe;
-  --primary: #6d6cf9;
-  --primary-foreground: #ffffff;
-  --secondary: #1c1b27;
-  --secondary-foreground: #c8c7dc;
-  --muted: #1c1b27;
-  --muted-foreground: #8a89a8;
-  --accent: #15141e;
-  --accent-foreground: #f0effe;
-  --border: rgba(255, 255, 255, 0.08);
-  --input: rgba(255, 255, 255, 0.06);
-  --ring: #6d6cf9;
-  --destructive: #f04444;
-  --destructive-foreground: #ffffff;
+/* ── Theme variants ──────────────────────────────────────────────────────────
+   The app toggles a `.light` class on <html> (LayoutClient, localStorage
+   "ates-theme"). `light:` and `dark:` follow that class, not the OS setting.
+   Always-dark areas (.surface-dark: sidebar, video stage) count as dark in
+   both themes, so `dark:` applies and `light:` does not inside them.       */
+@custom-variant light (&:where(.light, .light *):not(:where(.surface-dark, .surface-dark *)));
+@custom-variant dark (&:where(:root:not(.light), :root:not(.light) *, .surface-dark, .surface-dark *));
 
-  --shadow-sm:  0 1px 3px rgb(0 0 0 / 0.3), 0 1px 2px rgb(0 0 0 / 0.2);
-  --shadow-md:  0 4px 16px rgb(0 0 0 / 0.35), 0 2px 6px rgb(0 0 0 / 0.2);
-  --shadow-lg:  0 10px 40px rgb(0 0 0 / 0.45), 0 4px 16px rgb(0 0 0 / 0.25);
-  --shadow-primary: 0 4px 24px -2px rgb(109 108 249 / 0.45);
+/* ── z-index scale (bare z-60 / z-70 are valid in Tailwind v4) ───────────────
+   10  dropdown click-catcher
+   20–30 dropdown / menu
+   40  mobile backdrop
+   50  sidebar drawer · modal (.modal-root) · loading overlay
+   60  toast (.toast-stack)
+   Tagging workspace keeps its own layers unchanged:
+   z-[200] drag overlay · z-[999] code tooltip                                  */
+
+/* ── Tokens: dark values on :root ("Studio" palette) ─────────────────────────
+   :root carries the dark theme; `.light` on <html> switches to light, which
+   is the default when "ates-theme" is not saved (LayoutClient + layout.tsx).
+   The sidebar and the video stage stay dark in both themes (.surface-dark).
+   Unlayered on purpose: they only declare custom properties and must beat
+   Tailwind's @layer theme defaults.                                           */
+:root {
+  /* Surfaces */
+  --background: #141312;
+  --foreground: #ece9e4;
+  --card: #1f1e1c;
+  --card-foreground: #ece9e4;
+  --popover: #262422;
+  --popover-foreground: #ece9e4;
+  --sidebar: #0e0d0c;
+  --field: #1a1917;
+  --overlay: rgb(8 6 4 / 0.55);
+  --stage: #0c0b0a;
+
+  /* Brand (terracotta). --primary = text, icons, rings, tints, non-text fills.
+     A solid fill that carries text must use --primary-solid (white 4.62:1):
+     white on --primary is only 3.15:1 here and 2.28:1 inside .surface-dark. */
+  --primary: #e2713f;
+  --primary-foreground: #ffffff;
+  --primary-solid: #c4511f;
+  --brand-2: #f0956a;
+
+  /* Neutrals */
+  --secondary: #2a2825;
+  --secondary-foreground: #cdc8c0;
+  --muted: #2a2825;
+  --muted-foreground: #a39d94;
+  --accent: #1a1917;
+  --accent-foreground: #ece9e4;
+
+  /* Lines */
+  --border: rgba(255, 240, 220, 0.08);
+  --input: rgba(255, 240, 220, 0.15);
+  --ring: #e2713f;
+
+  /* Status / semantic */
+  --destructive: #f08a80;
+  --destructive-foreground: #2a0806;
+  --success: #6fcf97;
+  --success-foreground: #062414;
+  --warning: #e6b450;
+  --warning-foreground: #2a1c00;
+  --info: #8fb3f0;
+  --info-foreground: #06182f;
+  --mo: #ec8fb0;
+  --prosodic: #5cc9bd;
+
+  /* Elevation */
+  --elev-sm: 0 1px 2px rgb(0 0 0 / 0.30);
+  --elev-md: 0 4px 14px rgb(0 0 0 / 0.32), 0 1px 3px rgb(0 0 0 / 0.20);
+  --elev-lg: 0 14px 36px rgb(0 0 0 / 0.42), 0 4px 12px rgb(0 0 0 / 0.22);
+  --elev-glow: 0 4px 18px -6px rgb(226 113 63 / 0.40);
+
+  /* Legacy aliases for the existing shadow-[var(--shadow-*)] usages.
+     Declared on :root only: .light sits on <html> (= :root) and redefines
+     --elev-*, so these resolve to the active theme.                          */
+  --shadow-sm: var(--elev-sm);
+  --shadow-md: var(--elev-md);
+  --shadow-lg: var(--elev-lg);
+  --shadow-primary: var(--elev-glow);
+
+  color-scheme: dark;
 }
 
-/* ── Light mode ──────────────────────────────────────────────────────────── */
+/* ── Tokens: light mode (warm paper; default theme) ───────────────────────── */
 .light {
-  --background: #f0f0f7;
-  --foreground: #0a0a12;
+  /* Surfaces */
+  --background: #f4f2ee;
+  --foreground: #1d1b18;
   --card: #ffffff;
-  --card-foreground: #0a0a12;
-  --primary: #5856f0;
-  --primary-foreground: #ffffff;
-  --secondary: #e8e8f4;
-  --secondary-foreground: #1a1a2e;
-  --muted: #e8e8f4;
-  --muted-foreground: #6b6a88;
-  --accent: #eeeef8;
-  --accent-foreground: #0a0a12;
-  --border: rgba(0, 0, 0, 0.09);
-  --input: rgba(0, 0, 0, 0.06);
-  --ring: #5856f0;
-  --destructive: #dc2626;
-  --destructive-foreground: #ffffff;
+  --card-foreground: #1d1b18;
+  --popover: #ffffff;
+  --popover-foreground: #1d1b18;
+  --sidebar: #18171a;
+  --field: #faf8f5;
+  --overlay: rgb(30 24 14 / 0.30);
+  --stage: #121110;
 
-  --shadow-sm:  0 1px 3px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.05);
-  --shadow-md:  0 4px 16px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.06);
-  --shadow-lg:  0 10px 40px rgb(0 0 0 / 0.14), 0 4px 16px rgb(0 0 0 / 0.08);
-  --shadow-primary: 0 4px 24px -2px rgb(88 86 240 / 0.35);
+  /* Brand (terracotta) */
+  --primary: #b34a1c;
+  --primary-foreground: #ffffff;
+  --primary-solid: #c4511f;
+  --brand-2: #b45f1d;
+
+  /* Neutrals */
+  --secondary: #eeebe5;
+  --secondary-foreground: #3d3a35;
+  --muted: #eeebe5;
+  --muted-foreground: #6b665e;
+  --accent: #faf8f5;
+  --accent-foreground: #1d1b18;
+
+  /* Lines */
+  --border: rgba(60, 45, 20, 0.10);
+  --input: rgba(60, 45, 20, 0.22);
+  --ring: #c4511f;
+
+  /* Status / semantic */
+  --destructive: #b3261e;
+  --destructive-foreground: #ffffff;
+  --success: #2b744a;
+  --success-foreground: #ffffff;
+  --warning: #93600a;
+  --warning-foreground: #ffffff;
+  --info: #2f5fb3;
+  --info-foreground: #ffffff;
+  --mo: #a8325e;
+  --prosodic: #0f766e;
+
+  /* Elevation */
+  --elev-sm: 0 1px 2px rgb(60 45 20 / 0.06);
+  --elev-md: 0 4px 14px -4px rgb(60 45 20 / 0.14), 0 1px 3px rgb(60 45 20 / 0.06);
+  --elev-lg: 0 14px 36px -8px rgb(60 45 20 / 0.20), 0 4px 12px rgb(60 45 20 / 0.07);
+  --elev-glow: 0 4px 18px -6px rgb(196 81 31 / 0.35);
+
+  color-scheme: light;
 }
 
 @theme inline {
@@ -71,86 +159,1157 @@
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
 
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-mo: var(--mo);
+  --color-prosodic: var(--prosodic);
+  --color-brand-2: var(--brand-2);
+  --color-primary-solid: var(--primary-solid);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-overlay: var(--overlay);
+  --color-sidebar: var(--sidebar);
+  --color-field: var(--field);
+  --color-stage: var(--stage);
+
+  /* Theme-aware shadow-sm / shadow-md / shadow-lg / shadow-glow utilities */
+  --shadow-sm: var(--elev-sm);
+  --shadow-md: var(--elev-md);
+  --shadow-lg: var(--elev-lg);
+  --shadow-glow: var(--elev-glow);
+
+  /* Type scale additions: text-2xs (11px floor) and text-md (15px) */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-md: 0.9375rem;
+  --text-md--line-height: 1.375rem;
+
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
-/* ── Base styles ─────────────────────────────────────────────────────────── */
-* {
-  border-color: var(--border);
-  box-sizing: border-box;
+@theme {
+  --animate-fade-in: fade-in 0.3s ease-out both;
+  --animate-indeterminate: indeterminate 1.4s ease-in-out infinite;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  @keyframes indeterminate {
+    from { transform: translateX(-100%); }
+    to   { transform: translateX(300%); }
+  }
 }
 
-body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
-  font-feature-settings: "rlig" 1, "calt" 1;
-  -webkit-font-smoothing: antialiased;
+/* ── Base styles ─────────────────────────────────────────────────────────────
+   Inside @layer base so every Tailwind utility (border colors, outline-none,
+   rounded-*, transition-*, scrollbar-*) can override them.                    */
+@layer base {
+  *, ::before, ::after {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans), system-ui, sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Hebrew / RTL blocks. --font-hebrew is optional: while it is undefined the
+     declaration is invalid at computed-value time and falls back to inherit.
+     [dir="rtl"] is listed explicitly because the build (Lightning CSS, Chrome
+     111 target) rewrites :dir(rtl) into a :lang(...) list, which never
+     matches here (<html lang="en">). font-family inherits, so matching the
+     dir="rtl" element itself covers its subtree. */
+  :where(:dir(rtl), [dir="rtl"], :lang(he)) {
+    font-family: var(--font-hebrew), var(--font-geist-sans), system-ui, sans-serif;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 28%, transparent);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* Native checkboxes / radios / ranges in terracotta instead of the browser
+     blue (inherited; an accent-* utility on the element still wins). */
+  html {
+    accent-color: var(--primary-solid);
+  }
+
+  /* Smooth color transitions on interactive elements (no transform, so
+     framer-motion and scale utilities are not double-eased). */
+  button, a[href], [role="button"] {
+    transition-property: color, background-color, border-color, box-shadow, opacity;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* ── Scrollbars ── 5px WebKit/Blink scrollbars; thin standard scrollbars
+     only where ::-webkit-scrollbar is unsupported (Firefox). In Chromium,
+     setting scrollbar-width/scrollbar-color disables ::-webkit-scrollbar. */
+  ::-webkit-scrollbar          { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track    { background: transparent; }
+  ::-webkit-scrollbar-thumb    { background: color-mix(in oklab, var(--muted-foreground) 35%, transparent); border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover { background: color-mix(in oklab, var(--muted-foreground) 60%, transparent); }
+
+  @supports not selector(::-webkit-scrollbar) {
+    html {
+      scrollbar-width: thin;
+      scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;
+    }
+  }
 }
 
-/* ── Custom scrollbar ────────────────────────────────────────────────────── */
-::-webkit-scrollbar          { width: 5px; height: 5px; }
-::-webkit-scrollbar-track    { background: transparent; }
-::-webkit-scrollbar-thumb    { background: var(--border); border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
-
-/* ── Selection ───────────────────────────────────────────────────────────── */
-::selection { background: rgba(109, 108, 249, 0.28); }
-
-/* ── Focus ───────────────────────────────────────────────────────────────── */
-:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-  border-radius: 6px;
-}
-
-/* ── Smooth transitions on interactive elements ──────────────────────────── */
-button, a[href], [role="button"] {
-  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
-  transition-duration: 150ms;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* ── Card elevation helper ───────────────────────────────────────────────── */
-.card-elevated {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: var(--shadow-sm);
-}
-
-.card-elevated:hover {
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
-}
-
-/* ── Resize drag handles ─────────────────────────────────────────────────── */
-.resize-handle-h { cursor: col-resize; user-select: none; }
-.resize-handle-v { cursor: row-resize; user-select: none; }
-.dragging * { user-select: none !important; pointer-events: none !important; }
-
-/* ── Shimmer loading animation ───────────────────────────────────────────── */
+/* ── Shimmer keyframes (used by .shimmer / .shimmer-primary) ─────────────── */
 @keyframes shimmer {
   0%   { background-position: -400px 0; }
   100% { background-position: 400px 0; }
 }
 
-.shimmer {
-  background: linear-gradient(90deg, var(--secondary) 25%, var(--accent) 50%, var(--secondary) 75%);
-  background-size: 800px 100%;
-  animation: shimmer 1.6s infinite;
+/* ── Component vocabulary ────────────────────────────────────────────────────
+   Plain CSS in @layer components: any atomic utility on the same element
+   overrides these. Tone classes (.tone-*) are declared LAST.                  */
+@layer components {
+  /* ── Always-dark surfaces (sidebar in both themes, video stage) ──
+     Re-declares the dark token values, so every utility and component inside
+     (bg-card, text-muted-foreground, .field, .btn-*, .badge ...) re-themes on
+     its own. --primary is lighter here (#f0956a) for text/icons on near-black.
+     --sidebar / --stage are already dark in both themes and are not redeclared.
+     Background: add bg-sidebar or bg-stage (or .stage) next to it. */
+  .surface-dark {
+    --background: #141312;
+    --foreground: #ece9e4;
+    --card: #1f1e1c;
+    --card-foreground: #ece9e4;
+    --popover: #262422;
+    --popover-foreground: #ece9e4;
+    --field: #1a1917;
+
+    --primary: #f0956a;
+    --primary-foreground: #ffffff;
+    --primary-solid: #c4511f;
+    --brand-2: #f0956a;
+
+    --secondary: #2a2825;
+    --secondary-foreground: #cdc8c0;
+    --muted: #2a2825;
+    --muted-foreground: #a39d94;
+    --accent: #1a1917;
+    --accent-foreground: #ece9e4;
+
+    --border: rgba(255, 240, 220, 0.08);
+    --input: rgba(255, 240, 220, 0.15);
+    --ring: #e2713f;
+
+    --destructive: #f08a80;
+    --destructive-foreground: #2a0806;
+    --success: #6fcf97;
+    --success-foreground: #062414;
+    --warning: #e6b450;
+    --warning-foreground: #2a1c00;
+    --info: #8fb3f0;
+    --info-foreground: #06182f;
+    --mo: #ec8fb0;
+    --prosodic: #5cc9bd;
+
+    /* Dark shadows; the --shadow-* aliases are re-pointed so components that
+       read them (.card, .menu ...) resolve here, not at :root. */
+    --elev-sm: 0 1px 2px rgb(0 0 0 / 0.30);
+    --elev-md: 0 4px 14px rgb(0 0 0 / 0.32), 0 1px 3px rgb(0 0 0 / 0.20);
+    --elev-lg: 0 14px 36px rgb(0 0 0 / 0.42), 0 4px 12px rgb(0 0 0 / 0.22);
+    --elev-glow: 0 4px 18px -6px rgb(226 113 63 / 0.40);
+    --shadow-sm: var(--elev-sm);
+    --shadow-md: var(--elev-md);
+    --shadow-lg: var(--elev-lg);
+    --shadow-primary: var(--elev-glow);
+
+    color: var(--foreground);
+    color-scheme: dark;
+  }
+
+  /* ── Video stage (cinema frame) — use together with .surface-dark ── */
+  .stage {
+    background-color: var(--stage);
+    border-radius: 1.125rem;
+    overflow: hidden;
+    box-shadow: 0 18px 40px -24px rgb(0 0 0 / .55);
+  }
+
+  /* ── Buttons ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    height: 2.25rem;
+    padding-inline: .875rem;
+    border-radius: .625rem;
+    border: 1px solid transparent;
+    font-size: .875rem;
+    line-height: 1.25rem;
+    font-weight: 600;
+    white-space: nowrap;
+    user-select: none;
+    cursor: pointer;
+    transition: color .15s, background-color .15s, border-color .15s, box-shadow .15s, opacity .15s, transform .15s;
+  }
+  .btn:disabled,
+  .btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+  .btn:not(:disabled):active { transform: scale(.98); }
+
+  .btn-sm {
+    height: 1.75rem;
+    padding-inline: .625rem;
+    border-radius: .5rem;
+    font-size: .75rem;
+    line-height: 1rem;
+    gap: .375rem;
+  }
+  .btn-lg { height: 2.5rem; padding-inline: 1rem; }
+  .btn-block { width: 100%; }
+  .btn-icon { width: 2.25rem; padding-inline: 0; }
+  .btn-sm.btn-icon { width: 1.75rem; }
+
+  /* Terracotta fill + white (4.62:1), no glow: a 1px inset highlight only.
+     Hover darkens (6.15:1); lightening would drop white below 4.5:1. */
+  .btn-primary {
+    background-color: var(--primary-solid);
+    color: var(--primary-foreground);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16);
+  }
+  .btn-primary:not(:disabled):hover { background-color: color-mix(in oklab, var(--primary-solid) 88%, #000); }
+
+  .btn-secondary {
+    background-color: var(--secondary);
+    color: var(--secondary-foreground);
+    border-color: var(--border);
+  }
+  .btn-secondary:not(:disabled):hover {
+    background-color: color-mix(in oklab, var(--secondary), var(--foreground) 8%);
+    color: var(--foreground);
+  }
+
+  .btn-outline {
+    background-color: transparent;
+    color: var(--foreground);
+    border-color: var(--input);
+  }
+  .btn-outline:not(:disabled):hover { background-color: var(--secondary); }
+
+  .btn-ghost {
+    background-color: transparent;
+    color: var(--muted-foreground);
+  }
+  .btn-ghost:not(:disabled):hover {
+    background-color: var(--secondary);
+    color: var(--foreground);
+  }
+
+  .btn-soft {
+    background-color: color-mix(in oklab, var(--primary) 12%, transparent);
+    color: color-mix(in oklab, var(--primary) 80%, var(--foreground));
+    border-color: color-mix(in oklab, var(--primary) 25%, transparent);
+  }
+  /* Hover tint capped at 15% so the text stays >= 4.5:1 on list-card / inset
+     surfaces in dark mode; the stronger border carries the hover cue. */
+  .btn-soft:not(:disabled):hover {
+    background-color: color-mix(in oklab, var(--primary) 15%, transparent);
+    border-color: color-mix(in oklab, var(--primary) 40%, transparent);
+  }
+
+  .btn-destructive {
+    background-color: var(--destructive);
+    color: var(--destructive-foreground);
+  }
+  .btn-destructive:not(:disabled):hover { background-color: color-mix(in oklab, var(--destructive) 88%, #000); }
+
+  .btn-destructive-soft {
+    background-color: color-mix(in oklab, var(--destructive) 10%, transparent);
+    color: color-mix(in oklab, var(--destructive) 80%, var(--foreground));
+    border-color: color-mix(in oklab, var(--destructive) 25%, transparent);
+  }
+  .btn-destructive-soft:not(:disabled):hover { background-color: color-mix(in oklab, var(--destructive) 16%, transparent); }
+
+  .btn-success {
+    background-color: var(--success);
+    color: var(--success-foreground);
+  }
+
+  .btn-link {
+    height: auto;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: color-mix(in oklab, var(--primary) 80%, var(--foreground));
+    font-weight: 500;
+    border-radius: .25rem;
+  }
+  .btn-link:not(:disabled):hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  /* ── Icon-only ghost buttons (aria-label mandatory) ── */
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    flex-shrink: 0;
+    border-radius: .5rem;
+    color: var(--muted-foreground);
+    background-color: transparent;
+    cursor: pointer;
+  }
+  .icon-btn:not(:disabled):hover {
+    background-color: var(--secondary);
+    color: var(--foreground);
+  }
+  .icon-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .icon-btn-sm { width: 1.5rem; height: 1.5rem; border-radius: .375rem; }
+  .icon-btn-danger:not(:disabled):hover {
+    color: var(--destructive);
+    background-color: color-mix(in oklab, var(--destructive) 10%, transparent);
+  }
+
+  /* ── Form fields ── */
+  .field {
+    width: 100%;
+    height: 2.5rem;
+    padding-inline: .875rem;
+    border-radius: .625rem;
+    border: 1px solid var(--input);
+    background-color: var(--field);
+    color: var(--foreground);
+    font-size: .875rem;
+    line-height: 1.25rem;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  /* Full-strength muted: the plan's 80% alpha was 3.58:1 in light mode. */
+  .field::placeholder { color: var(--muted-foreground); }
+  .field:hover:not(:disabled):not(:focus) { border-color: color-mix(in oklab, var(--input), var(--foreground) 15%); }
+  .field:focus {
+    outline: none;
+    border-color: var(--ring);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 22%, transparent);
+  }
+  .field:disabled { opacity: .5; cursor: not-allowed; }
+  textarea.field {
+    height: auto;
+    padding-block: .5rem;
+    line-height: 1.625;
+  }
+  select.field {
+    appearance: none;
+    cursor: pointer;
+    padding-inline-end: 2.25rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a847b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-size: 1rem;
+    background-position: right .75rem center;
+  }
+  /* :dir(rtl) is rewritten to :lang(...) by the build, so the dir attribute
+     forms are listed explicitly as well. */
+  select.field:dir(rtl),
+  select.field[dir="rtl"],
+  [dir="rtl"] select.field:not([dir="ltr"]) { background-position: left .75rem center; }
+  select.field option {
+    background-color: var(--card);
+    color: var(--foreground);
+  }
+
+  .field-sm {
+    height: 2rem;
+    padding-inline: .625rem;
+    border-radius: .5rem;
+    font-size: .875rem;
+  }
+  .field-xs {
+    height: 1.75rem;
+    padding-inline: .5rem;
+    border-radius: .375rem;
+    font-size: .75rem;
+  }
+  .field-label {
+    display: flex;
+    align-items: center;
+    gap: .375rem;
+    font-size: .75rem;
+    line-height: 1rem;
+    font-weight: 600;
+    color: var(--muted-foreground);
+  }
+  .field-hint {
+    font-size: .75rem;
+    line-height: 1.125rem;
+    color: var(--muted-foreground);
+  }
+
+  /* ── Labels ── */
+  /* Latin-only eyebrow labels ('Time Range', 'Tags (n)', 'META_INTRO') */
+  .eyebrow {
+    font-size: .6875rem;
+    line-height: 1rem;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+  /* Hebrew labels: never uppercase / tracked */
+  .section-label {
+    font-size: .75rem;
+    line-height: 1.125rem;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    letter-spacing: normal;
+    text-transform: none;
+  }
+
+  /* ── Surfaces ── */
+  .card {
+    background-color: var(--card);
+    color: var(--card-foreground);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    box-shadow: var(--shadow-sm);
+  }
+  .card-interactive { cursor: pointer; transition: box-shadow .2s, border-color .2s; }
+  .card-interactive:hover {
+    box-shadow: var(--shadow-md);
+    border-color: color-mix(in oklab, var(--primary) 25%, var(--border));
+  }
+
+  .panel {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: .875rem;
+    box-shadow: var(--shadow-sm);
+  }
+  .panel-inset {
+    border: 1px solid var(--border);
+    border-radius: .75rem;
+    background-color: color-mix(in oklab, var(--secondary) 40%, transparent);
+    padding: .75rem;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    min-height: 2.75rem;
+    padding-inline: 1rem;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .card-title {
+    font-size: .9375rem;
+    line-height: 1.375rem;
+    font-weight: 600;
+  }
+
+  /* ── Icon tiles ── (icons are graphics: pure tone is fine) */
+  .icon-tile {
+    --tone: var(--primary);
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    border-radius: .5rem;
+    background-color: color-mix(in oklab, var(--tone) 12%, transparent);
+    color: var(--tone);
+  }
+  .icon-tile-md { width: 2.5rem; height: 2.5rem; border-radius: .75rem; }
+  .icon-tile-lg { width: 3rem; height: 3rem; border-radius: 1rem; }
+
+  /* ── Badges ── pill-shaped. Text nudged 20% toward --foreground so every
+     tone passes WCAG AA on its own tint over card, list-card, panel-inset,
+     popover and page background, in both themes and inside .surface-dark.
+     Same formula for every tinted text. */
+  .badge {
+    --tone: var(--muted-foreground);
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    height: 1.25rem;
+    padding-inline: .5rem;
+    border-radius: 9999px;
+    border: 1px solid color-mix(in oklab, var(--tone) 30%, transparent);
+    background-color: color-mix(in oklab, var(--tone) 12%, transparent);
+    color: color-mix(in oklab, var(--tone) 80%, var(--foreground));
+    font-size: .6875rem;
+    line-height: 1rem;
+    font-weight: 600;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .badge-pill { border-radius: 9999px; padding-inline: .5rem; }
+  .badge-lg { height: 1.5rem; padding-inline: .625rem; font-size: .75rem; }
+
+  .status-dot {
+    --tone: var(--muted-foreground);
+    width: .375rem;
+    height: .375rem;
+    border-radius: 9999px;
+    background-color: var(--tone);
+    flex-shrink: 0;
+  }
+
+  /* ── Code chips ── set --code to the code's identity hex (never changed).
+     The pure hex is for dots, timeline markers and accent bars only.
+     Text is 45% code / 55% foreground (CALM says 50%): at 50% the pale codes
+     (Q3/EV3 light, SRL8_MOTIVATION dark) drop to 4.13-4.21:1 on the page
+     background / popover; at 45% every code color in use is >= 4.75:1 on
+     every surface (Studio palette, both themes, and inside .surface-dark). */
+  .code-chip {
+    --c: var(--code, var(--primary));
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    height: 1.25rem;
+    padding-inline: .5rem;
+    border-radius: 9999px;
+    border: 1px solid color-mix(in oklab, var(--c) 28%, transparent);
+    background-color: color-mix(in oklab, var(--c) 11%, transparent);
+    color: color-mix(in oklab, var(--c) 45%, var(--foreground));
+    font-size: .6875rem;
+    line-height: 1rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .code-chip-md {
+    height: 1.75rem;
+    padding-inline: .75rem;
+    border-radius: 9999px;
+    font-size: .75rem;
+  }
+  .code-dot {
+    width: .375rem;
+    height: .375rem;
+    border-radius: 9999px;
+    flex-shrink: 0;
+    background-color: var(--code, var(--c));
+  }
+
+  /* ── Pills ── */
+  .time-pill {
+    display: inline-flex;
+    align-items: center;
+    height: 1.25rem;
+    padding-inline: .5rem;
+    border-radius: 9999px;
+    background-color: var(--secondary);
+    color: var(--muted-foreground);
+    font-family: var(--font-mono);
+    font-size: .6875rem;
+    font-variant-numeric: tabular-nums;
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+  .count-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding-inline: .375rem;
+    border-radius: 9999px;
+    background-color: var(--secondary);
+    color: var(--muted-foreground);
+    font-size: .6875rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .count-pill[data-active="true"] {
+    background-color: color-mix(in oklab, var(--primary) 15%, transparent);
+    color: color-mix(in oklab, var(--primary) 80%, var(--foreground));
+  }
+
+  /* ── Keyboard hint ── */
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 1rem;
+    min-width: 1rem;
+    padding-inline: .25rem;
+    border-radius: .25rem;
+    border: 1px solid var(--border);
+    background-color: color-mix(in oklab, var(--secondary) 60%, transparent);
+    font-family: var(--font-mono);
+    font-size: .6875rem;
+    line-height: 1;
+    color: var(--muted-foreground);
+    direction: ltr;
+  }
+
+  /* ── Segmented control (drive state with aria-pressed) ──
+     Studio: neutral track, the selected item is a raised card (no terracotta
+     fill: the accent is kept for the main actions). */
+  .segmented {
+    display: inline-flex;
+    gap: .125rem;
+    padding: .1875rem;
+    border-radius: .6875rem;
+    border: 1px solid var(--border);
+    background-color: var(--secondary);
+  }
+  .segmented-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .375rem;
+    height: 1.75rem;
+    padding-inline: .75rem;
+    border-radius: .5rem;
+    font-size: .75rem;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    background-color: transparent;
+    cursor: pointer;
+  }
+  .segmented-item:hover { color: var(--foreground); }
+  .segmented-item[aria-pressed="true"],
+  .segmented-item[aria-selected="true"],
+  .segmented-item[data-active="true"] {
+    background-color: var(--card);
+    color: var(--foreground);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), inset 0 0 0 1px var(--border);
+  }
+
+  /* ── Underline tabs ── */
+  .tab-underline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .375rem;
+    height: 2.5rem;
+    font-size: .875rem;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    cursor: pointer;
+  }
+  .tab-underline:hover { color: var(--foreground); }
+  .tab-underline[aria-selected="true"],
+  .tab-underline[data-active="true"] {
+    color: var(--foreground);
+    border-bottom-color: var(--primary);
+  }
+
+  /* ── Toggle chips (codebook codes, environment windows, folder picker) ──
+     Unselected: neutral chip (+ optional .code-dot). Selected: tinted with
+     --code (falls back to --primary), 1.5px ring in that color, semibold. */
+  .chip-toggle {
+    --c: var(--code, var(--primary));
+    display: inline-flex;
+    align-items: center;
+    gap: .375rem;
+    height: 1.75rem;
+    padding-inline: .75rem;
+    border-radius: 9999px;
+    font-size: .75rem;
+    font-weight: 500;
+    color: var(--secondary-foreground);
+    background-color: var(--card);
+    box-shadow: inset 0 0 0 1px var(--input);
+    cursor: pointer;
+  }
+  .chip-toggle:hover {
+    background-color: color-mix(in oklab, var(--secondary) 60%, var(--card));
+    color: var(--foreground);
+  }
+  .chip-toggle[aria-pressed="true"],
+  .chip-toggle[data-active="true"] {
+    background-color: color-mix(in oklab, var(--c) 20%, var(--card));
+    color: var(--foreground);
+    font-weight: 600;
+    box-shadow: inset 0 0 0 1.5px var(--c);
+  }
+
+  /* Disabled state for the toggle-style controls (Tailwind v4 preflight gives
+     buttons cursor:default, so these classes set the pointer themselves). */
+  .segmented-item:disabled,
+  .tab-underline:disabled,
+  .chip-toggle:disabled,
+  .menu-item:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ── Modal (add role=dialog aria-modal aria-labelledby on .modal-panel) ── */
+  .modal-root {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+  .modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background-color: var(--overlay);
+    backdrop-filter: blur(4px);
+  }
+  .modal-panel {
+    position: relative;
+    z-index: 10;
+    width: 100%;
+    max-width: 28rem;
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+    background-color: var(--card);
+    color: var(--card-foreground);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    box-shadow: var(--shadow-lg);
+  }
+  .modal-panel-lg { max-width: 42rem; }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-title {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    font-size: 1rem;
+    line-height: 1.5rem;
+    font-weight: 600;
+  }
+  .modal-body { padding: 1.25rem; }
+  .modal-footer {
+    display: flex;
+    gap: .5rem;
+    padding: 0 1.25rem 1.25rem;
+  }
+
+  /* ── Menus (positioning stays as utilities in markup) ── */
+  .menu {
+    min-width: 11rem;
+    padding-block: .375rem;
+    background-color: var(--popover);
+    color: var(--popover-foreground);
+    border: 1px solid var(--border);
+    border-radius: .75rem;
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+  }
+  .menu-item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: .625rem;
+    padding: .5rem .875rem;
+    font-size: .875rem;
+    text-align: start;
+    color: inherit;
+    cursor: pointer;
+  }
+  /* Foreground tint, not --secondary: in dark mode --secondary is almost the
+     same tone as --popover (1.03:1), so the hover/focus row was invisible. */
+  .menu-item:hover,
+  .menu-item:focus-visible {
+    background-color: color-mix(in oklab, var(--foreground) 8%, transparent);
+  }
+  .menu-item:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
+  }
+  .menu-item-danger { color: color-mix(in oklab, var(--destructive) 80%, var(--foreground)); }
+  .menu-item-danger:hover,
+  .menu-item-danger:focus-visible { background-color: color-mix(in oklab, var(--destructive) 10%, transparent); }
+  .menu-sep {
+    height: 1px;
+    margin: .25rem .5rem;
+    background-color: var(--border);
+  }
+
+  /* ── Tooltip (positioning stays inline) ── */
+  .tooltip {
+    max-width: min(16rem, calc(100vw - 1rem));
+    padding: .5rem .75rem;
+    border-radius: .75rem;
+    border: 1px solid var(--border);
+    background-color: var(--popover);
+    color: var(--popover-foreground);
+    box-shadow: var(--shadow-lg);
+    font-size: .75rem;
+    line-height: 1.6;
+  }
+  .tooltip-arrow {
+    width: .75rem;
+    height: .75rem;
+    background-color: var(--popover);
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    transform: rotate(45deg);
+  }
+
+  /* ── Callouts (role=alert for errors, role=status for status) ── */
+  .callout {
+    --tone: var(--info);
+    display: flex;
+    align-items: flex-start;
+    gap: .75rem;
+    padding: .75rem 1rem;
+    border-radius: .75rem;
+    border: 1px solid color-mix(in oklab, var(--tone) 28%, transparent);
+    background-color: color-mix(in oklab, var(--tone) 9%, transparent);
+    color: var(--foreground);
+    font-size: .875rem;
+    line-height: 1.5;
+  }
+  .callout-icon {
+    color: var(--tone);
+    flex-shrink: 0;
+    margin-top: .125rem;
+  }
+  .callout-title {
+    color: color-mix(in oklab, var(--tone) 80%, var(--foreground));
+    font-weight: 600;
+  }
+  .callout-text { color: var(--muted-foreground); }
+
+  /* ── Toasts (role=status aria-live=polite on .toast-stack) ── */
+  .toast-stack {
+    position: fixed;
+    inset-inline-end: 1.5rem;
+    bottom: 1.5rem;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    pointer-events: none;
+  }
+  .toast {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .75rem 1rem;
+    border-radius: .75rem;
+    font-size: .875rem;
+    box-shadow: var(--shadow-lg);
+    background-color: var(--card);
+    color: var(--foreground);
+    border: 1px solid var(--border);
+  }
+  .toast-success {
+    background-color: var(--success);
+    color: var(--success-foreground);
+    border-color: transparent;
+  }
+  .toast-info {
+    background-color: var(--primary-solid);
+    color: var(--primary-foreground);
+    border-color: transparent;
+  }
+
+  /* ── Empty states ── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .75rem;
+    text-align: center;
+    padding: 3rem 1.5rem;
+    border-radius: 1rem;
+    border: 1px dashed color-mix(in oklab, var(--muted-foreground) 30%, transparent);
+    background-color: var(--card);
+    color: var(--muted-foreground);
+  }
+  .empty-state-compact {
+    padding: 2rem 1rem;
+    border: 0;
+    background-color: transparent;
+  }
+  .empty-state-icon {
+    display: grid;
+    place-items: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 1rem;
+    background-color: var(--secondary);
+    color: var(--muted-foreground);
+  }
+  .empty-state-title {
+    font-size: .875rem;
+    font-weight: 600;
+    color: var(--foreground);
+  }
+  .empty-state-text {
+    font-size: .75rem;
+    line-height: 1.6;
+    max-width: 24rem;
+    color: var(--muted-foreground);
+  }
+
+  /* ── Page shell ── */
+  .page {
+    width: 100%;
+    max-width: 80rem;
+    margin-inline: auto;
+    padding: 1.5rem 1rem;
+  }
+  @media (min-width: 40rem) {
+    .page { padding: 1.5rem; }
+  }
+  @media (min-width: 64rem) {
+    .page { padding: 2rem; }
+  }
+  .page-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .page-title {
+    font-size: 1.5rem;
+    line-height: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+  }
+  @media (min-width: 48rem) {
+    .page-title { font-size: 1.75rem; line-height: 2.25rem; }
+  }
+  .page-subtitle {
+    margin-top: .25rem;
+    font-size: .875rem;
+    color: var(--muted-foreground);
+  }
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: .375rem;
+    border-radius: .375rem;
+    font-size: .875rem;
+    color: var(--muted-foreground);
+  }
+  .back-link:hover { color: var(--foreground); }
+
+  /* ── Stat cards: card + overflow-hidden + stat-strip + icon-tile-md ── */
+  .stat-strip {
+    --tone: var(--primary);
+    height: 3px;
+    background: linear-gradient(90deg, color-mix(in oklab, var(--tone) 70%, transparent), color-mix(in oklab, var(--tone) 15%, transparent));
+  }
+  .stat-label {
+    font-size: .875rem;
+    color: var(--muted-foreground);
+  }
+  .stat-value {
+    font-size: 1.5rem;
+    line-height: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-sub {
+    font-size: .75rem;
+    color: var(--muted-foreground);
+  }
+
+  /* ── Meters / progress ── */
+  .meter {
+    height: .375rem;
+    border-radius: 9999px;
+    background-color: var(--secondary);
+    overflow: hidden;
+  }
+  .meter-fill {
+    --tone: var(--primary);
+    height: 100%;
+    border-radius: inherit;
+    background-color: var(--tone);
+    transition: width .5s;
+  }
+  .meter-indeterminate {
+    width: 33%;
+    animation: var(--animate-indeterminate);
+  }
+
+  /* ── Loading shimmer (gradient paints over bg-* utilities) ── */
+  .shimmer {
+    background: linear-gradient(90deg, var(--secondary) 25%, var(--accent) 50%, var(--secondary) 75%);
+    background-size: 800px 100%;
+    animation: shimmer 1.6s infinite;
+  }
+  /* AI processing bar */
+  .shimmer-primary {
+    background: linear-gradient(90deg, color-mix(in oklab, var(--primary) 35%, transparent) 25%, var(--primary) 50%, color-mix(in oklab, var(--primary) 35%, transparent) 75%);
+    background-size: 800px 100%;
+    animation: shimmer 1.6s infinite;
+  }
+
+  /* ── Card elevation helper (legacy, kept for compatibility) ── */
+  .card-elevated {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow-sm);
+  }
+  .card-elevated:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+  }
+
+  /* ── Reading comfort ── */
+  /* Hebrew reasoning lines: never italic; a start-side rule instead */
+  .reasoning-quote {
+    border-inline-start: 2px solid color-mix(in oklab, var(--primary) 40%, transparent);
+    padding-inline-start: .625rem;
+    color: var(--muted-foreground);
+    font-style: normal;
+  }
+  /* Evidence / reasoning prose where width allows */
+  .reading {
+    font-size: .875rem;
+    line-height: 1.8;
+  }
+
+  /* ── Numbered form steps (1 Time Range, 2 עוצמת התיוג ...) ── decorative:
+     place before the existing label text, aria-hidden. */
+  .step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.375rem;
+    height: 1.375rem;
+    border-radius: 9999px;
+    background-color: var(--foreground);
+    color: var(--card);
+    /* Longhands, not the `font` shorthand: if --font-mono were ever
+       unresolved, the shorthand would drop size/weight too (inherit 16px). */
+    font-family: var(--font-mono);
+    font-size: .6875rem;
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+
+  /* ── Timeline rows (Session Tags): time column + content column ──
+     No box around a row: hairline separator, accent tint on hover. Add
+     cursor-pointer in markup when the row is clickable (seek). */
+  .timeline-row {
+    display: grid;
+    grid-template-columns: 5.25rem minmax(0, 1fr);
+    gap: .875rem;
+    padding: .875rem 1.125rem;
+    border-bottom: 1px solid var(--border);
+    transition: background-color .15s;
+  }
+  .timeline-row:hover { background-color: var(--accent); }
+  .timeline-time {
+    font-family: var(--font-mono);
+    font-size: .9375rem;
+    line-height: 1.375rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--foreground);
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+  .timeline-time-end {
+    font-family: var(--font-mono);
+    font-size: .71875rem;
+    line-height: 1rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted-foreground);
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+
+  /* ── Toolbar group divider (aria-hidden) ── */
+  .toolbar-sep {
+    width: 1px;
+    height: 1.25rem;
+    flex-shrink: 0;
+    background-color: var(--border);
+  }
+
+  /* ── Items inside a card/panel (seek cards: session events, AI events,
+     tag cards): a subtle surface tone + hairline border, no strong outline. */
+  .list-card {
+    background-color: color-mix(in oklab, var(--secondary) 50%, var(--card));
+    border: 1px solid var(--border);
+    border-radius: .75rem;
+    padding: .75rem;
+  }
+  .list-card-interactive {
+    cursor: pointer;
+    transition: border-color .15s, background-color .15s;
+  }
+  .list-card-interactive:hover {
+    border-color: color-mix(in oklab, var(--primary) 35%, transparent);
+    background-color: var(--secondary);
+  }
+
+  /* ── Tones: LAST, so they override the component --tone defaults ──
+     Use with badge / callout / icon-tile / status-dot / stat-strip / meter-fill,
+     e.g. class="badge tone-success". */
+  .tone-primary  { --tone: var(--primary); }
+  .tone-success  { --tone: var(--success); }
+  .tone-warning  { --tone: var(--warning); }
+  .tone-info     { --tone: var(--info); }
+  .tone-danger   { --tone: var(--destructive); }
+  .tone-mo       { --tone: var(--mo); }
+  .tone-prosodic { --tone: var(--prosodic); }
+  .tone-violet   { --tone: var(--brand-2); }
+  .tone-neutral  { --tone: var(--muted-foreground); }
 }
 
-/* ── Gradient text ───────────────────────────────────────────────────────── */
-.gradient-text {
-  background: linear-gradient(135deg, var(--primary), #a78bfa);
+/* ── Resize drag helpers (kept unchanged) ────────────────────────────────── */
+.resize-handle-h { cursor: col-resize; user-select: none; }
+.resize-handle-v { cursor: row-resize; user-select: none; }
+.dragging * { user-select: none !important; pointer-events: none !important; }
+
+/* ── Utilities (same names as before, now theme-aware) ───────────────────── */
+@utility gradient-text {
+  background: linear-gradient(135deg, var(--primary), var(--brand-2));
   -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
   background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
-/* ── Glow ────────────────────────────────────────────────────────────────── */
-.glow-primary {
-  box-shadow: var(--shadow-primary);
+@utility glow-primary {
+  box-shadow: var(--elev-glow);
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

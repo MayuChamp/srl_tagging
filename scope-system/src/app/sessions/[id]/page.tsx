@@ -1,61 +1,15 @@
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { type VideoMarker, type Caption } from "@/components/video/VideoPlayer";
-import { BookOpen, Tag, Calendar, Video, Clock, RotateCcw, ArrowLeft } from "lucide-react";
+import { BookOpen, Tag, Calendar, Video, Clock, RotateCcw, ArrowLeft, Gauge } from "lucide-react";
+import { CODE_COLORS } from "@/lib/codeColors";
 import { SessionViewPlayer } from "./SessionViewPlayer";
 
 export const revalidate = 0;
 
-// All known code colors — kept broad for backward-compat with old ATES sessions
-const CODE_COLORS: Record<string, string> = {
-  // SCOPE: TDS
-  TDS_COG: "#0891b2", TDS_META: "#0e7490", TDS_MOT: "#155e75", TDS_NONE: "#475569",
-  // SCOPE: EX
-  EX_IMPL: "#6366f1", EX_PART: "#7c3aed", EX_EXPL: "#4f46e5", EX_NA: "#64748b",
-  // SCOPE: SRL
-  SRL_GOAL: "#0ea5e9", SRL_PLAN: "#0284c7", SRL_COG: "#0369a1", SRL_MON: "#075985",
-  SRL_CTRL: "#0c4a6e", SRL_REFL: "#164e63", SRL_HELP: "#155e75", SRL_CONTEXT: "#312e81",
-  // SCOPE: ST
-  ST_PLAN: "#9333ea", ST_MON: "#7e22ce", ST_HELP: "#a855f7",
-  // SCOPE: SCI
-  SCI_DATA: "#92400e", SCI_TRANSFER: "#6ee7b7", SCI_ARG: "#ea580c",
-  // SCOPE: TA
-  TA0: "#94a3b8", TA1: "#f87171", TA2: "#fb923c", TA3: "#4ade80",
-  // SCOPE: MO
-  MO_EXPL: "#ef4444", MO_MON: "#f97316", MO_EVID: "#eab308",
-  MO_REFL: "#a78bfa", MO_AGENCY: "#ec4899", MO_HELP: "#f43f5e",
-  // SCOPE: Q
-  Q0: "#94a3b8", Q1: "#fca5a5", Q2: "#fcd34d", Q3: "#86efac",
-  // SCOPE: EV
-  EV0: "#94a3b8", EV1: "#fca5a5", EV2: "#fcd34d", EV3: "#86efac",
-  // NONVERBAL
-  N_MODELING: "#d97706", N_ATTENTION_GUIDING: "#b45309",
-  N_COLLAB_STRUCTURE: "#92400e", N_EMOTION_DISPLAY: "#78350f",
-  N_ATTENTION: "#f59e0b", N_GESTURE_FOCUS: "#ea580c",
-  P_INTONATION_ENCOURAGE: "#ec4899", P_INTONATION_QUESTION: "#db2777",
-  // Legacy ATES codes (for older sessions)
-  D_PLAN: "#3b82f6", D_MONITOR: "#2563eb", D_REFLECT: "#1d4ed8",
-  D_STRATEGY_EXPLAIN: "#1e40af", D_MOTIVATION: "#1e3a8a",
-  I_CHOICE: "#0d9488", I_SCAFFOLD: "#10b981", I_PEER_SR: "#16a34a",
-  I_TASK_DESIGN: "#15803d", I_FEEDBACK_SR: "#166534", I_FEEDBACK: "#059669",
-  S_PLAN_TALK: "#8b5cf6", S_MONITOR_TALK: "#7c3aed", S_REFLECT_TALK: "#9333ea",
-  S_STRATEGY_LABEL: "#7e22ce", S_MOTIVATION_TALK: "#6b21a8",
-  S_GOAL_SET: "#a855f7", S_EVAL_TALK: "#6d28d9",
-  Q_INQUIRY: "#22d3ee", Q_METACOG: "#0891b2", Q_EVIDENCE: "#0e7490",
-  PV1_PROMPT: "#f43f5e", PV2_STUDENT_VOICE: "#e11d48",
-  PV3_ADJUSTMENT: "#be185d", PV4_CONSOLIDATION: "#9d174d",
-  EP_PLAN: "#6366f1", EP_MONITOR: "#4f46e5", EP_REFLECT: "#4338ca",
-  SRL1_GOAL_SETTING: "#0ea5e9", SRL2_PLANNING: "#0284c7",
-  SRL3_COGNITIVE: "#0369a1", SRL4_METACOG_MONITORING: "#075985",
-  SRL5_CONTROL: "#0c4a6e", SRL6_REFLECTION: "#164e63",
-  SRL7_HELP_SEEKING: "#155e75", SRL8_MOTIVATION: "#083344",
-  SRL9_CONTEXTUAL: "#312e81",
-  ATES1_EXPLICIT: "#dc2626", ATES2_PARTIAL: "#b91c1c",
-  ATES3_IMPLICIT: "#991b1b", ATES4_INDIRECT: "#7f1d1d", ATES5_MISSED: "#64748b",
-  SCI1_HYPOTHESIS: "#a3e635", SCI2_VARIABLE: "#84cc16", SCI3_EVIDENCE: "#65a30d",
-  SCI4_DATA_INTERP: "#4d7c0f", SCI5_EXPLANATION: "#3f6212", SCI6_CONFLICT: "#365314",
-  SCI7_ARGUMENTATION: "#34d399", SCI8_TRANSFER: "#6ee7b7",
-};
+// Display-only: dir="auto" text never matches the [dir=rtl] Heebo rule in
+// globals.css; Geist stays first for Latin, Hebrew glyphs fall back to Heebo.
+const autoDirFont = "font-[family-name:var(--font-geist-sans),var(--font-hebrew),system-ui,sans-serif]";
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -89,14 +43,16 @@ export default async function SessionDetailPage({
 
   if (!analysis) {
     return (
-      <div className="p-8 max-w-7xl mx-auto space-y-6">
-        <Link href="/sessions" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+      <div className="page space-y-6">
+        <Link href="/sessions" className="back-link">
           <ArrowLeft size={15} /> Session Library
         </Link>
-        <div className="bg-card border border-border rounded-xl p-16 flex flex-col items-center justify-center text-muted-foreground gap-4">
-          <BookOpen size={40} className="opacity-30" />
-          <p className="text-lg font-medium">Session not found</p>
-          <Link href="/sessions" className="text-primary hover:underline text-sm">
+        <div className="empty-state">
+          <div className="empty-state-icon">
+            <BookOpen size={22} />
+          </div>
+          <p className="empty-state-title">Session not found</p>
+          <Link href="/sessions" className="btn btn-soft">
             Return to Session Library
           </Link>
         </div>
@@ -158,27 +114,27 @@ export default async function SessionDetailPage({
     : null;
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500">
-      <Link href="/sessions" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+    <div className="page space-y-6 animate-fade-in">
+      <Link href="/sessions" className="back-link">
         <ArrowLeft size={15} /> Session Library
       </Link>
 
-      <header className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center shrink-0">
-            <BookOpen size={20} className="text-primary" />
+      <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="icon-tile icon-tile-md">
+            <BookOpen size={20} />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{sessionName}</h1>
-            <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <Calendar size={13} />
+          <div className="min-w-0">
+            <h1 className={`page-title tracking-normal break-words text-left ${autoDirFont}`} dir="auto">{sessionName}</h1>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <Calendar size={13} className="shrink-0" />
                 {formatDate(analysis.created_at)}
               </span>
               {videoTitle && (
-                <span className="flex items-center gap-1.5">
-                  <Video size={13} />
-                  {videoTitle}
+                <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
+                  <Video size={13} className="shrink-0" />
+                  <span className={`truncate max-w-[18rem] ${autoDirFont}`} dir="auto" title={videoTitle}>{videoTitle}</span>
                 </span>
               )}
             </div>
@@ -186,7 +142,7 @@ export default async function SessionDetailPage({
         </div>
         <Link
           href={`/tagging?session=${id}`}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 transition-colors text-sm font-medium shrink-0"
+          className="btn btn-primary shrink-0 self-start"
         >
           <RotateCcw size={15} />
           Keep Tagging
@@ -194,22 +150,24 @@ export default async function SessionDetailPage({
       </header>
 
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         {[
-          { label: "Events", value: events.length, icon: Tag, color: "text-purple-400" },
-          { label: "Tagged Duration", value: formatTime(totalDuration), icon: Clock, color: "text-blue-400" },
+          { label: "Events", value: events.length, icon: Tag, tone: "tone-primary" },
+          { label: "Tagged Duration", value: formatTime(totalDuration), icon: Clock, tone: "tone-info" },
           {
             label: "Avg Confidence",
             value: avgConfidence != null ? `${Math.round(avgConfidence * 100)}%` : "—",
-            icon: BookOpen,
-            color: "text-emerald-400",
+            icon: Gauge,
+            tone: "tone-success",
           },
         ].map((stat, i) => (
-          <div key={i} className="bg-card border border-border rounded-xl p-4 flex items-center gap-3 shadow-sm">
-            <stat.icon size={24} className={stat.color} />
-            <div>
-              <p className="text-muted-foreground text-xs font-medium">{stat.label}</p>
-              <p className="text-xl font-bold">{stat.value}</p>
+          <div key={i} className="card p-4 sm:p-5 flex items-center gap-3">
+            <div className={`icon-tile icon-tile-md ${stat.tone}`}>
+              <stat.icon size={18} />
+            </div>
+            <div className="min-w-0">
+              <p className="stat-label">{stat.label}</p>
+              <p className="stat-value">{stat.value}</p>
             </div>
           </div>
         ))}

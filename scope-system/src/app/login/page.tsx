@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Lock, User, LogIn, Loader2 } from "lucide-react";
+import { Lock, User, LogIn, Loader2, Tags, AlertCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 
 export default function LoginPage() {
@@ -41,44 +41,59 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="w-full max-w-md p-8 space-y-8 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl">
+    <div className="card w-full max-w-md p-6 sm:p-8 space-y-8 shadow-lg">
       <div className="text-center">
-        <h1 className="text-3xl font-bold tracking-tight text-white mb-2">SCOPE</h1>
-        <p className="text-zinc-400">SRL Video Analysis System</p>
+        <div className="mx-auto mb-4 size-12 rounded-2xl bg-primary-solid text-primary-foreground grid place-items-center">
+          <Tags size={22} />
+        </div>
+        <h1 className="text-3xl font-bold tracking-wide text-foreground mb-1">SCOPE</h1>
+        <p className="page-subtitle">SRL Video Analysis System</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6 mt-8">
+      <form onSubmit={handleSubmit} aria-busy={loading} className="space-y-6">
         {error && (
-          <div className="p-3 text-sm text-red-400 bg-red-950/50 border border-red-900 rounded-lg text-center">
-            {error}
+          <div role="alert" className="callout tone-danger justify-center text-center">
+            <AlertCircle size={16} className="callout-icon" />
+            <span>{error}</span>
           </div>
         )}
 
         <div className="space-y-4">
           <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <User className="h-5 w-5 text-zinc-500" />
+            <label htmlFor="login-username" className="sr-only">Email or Username</label>
+            <div className="absolute inset-y-0 start-0 ps-3 flex items-center pointer-events-none text-muted-foreground">
+              <User className="h-5 w-5" />
             </div>
             <input
+              id="login-username"
+              name="username"
               type="text"
               placeholder="Email or Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-zinc-950 border border-zinc-800 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-white placeholder:text-zinc-600"
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              dir="ltr"
+              className="field h-11 ps-10 pe-4 text-base"
               required
             />
           </div>
 
           <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Lock className="h-5 w-5 text-zinc-500" />
+            <label htmlFor="login-password" className="sr-only">Password</label>
+            <div className="absolute inset-y-0 start-0 ps-3 flex items-center pointer-events-none text-muted-foreground">
+              <Lock className="h-5 w-5" />
             </div>
             <input
+              id="login-password"
+              name="password"
               type="password"
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-zinc-950 border border-zinc-800 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-white placeholder:text-zinc-600"
+              autoComplete="current-password"
+              className="field h-11 ps-10 pe-4 text-base"
               required
             />
           </div>
@@ -87,13 +102,16 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full flex items-center justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="btn btn-primary btn-lg btn-block h-11"
         >
           {loading ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
+            <>
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="sr-only">Signing in…</span>
+            </>
           ) : (
             <>
-              <LogIn className="h-5 w-5 mr-2" />
+              <LogIn className="h-4 w-4" />
               Sign In
             </>
           )}

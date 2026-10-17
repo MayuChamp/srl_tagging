@@ -49,6 +49,64 @@ rerun direct-SRL tags. Runs and human review history are retained independently.
    reports an uninstalled migration rather than treating missing tables as an
    empty successful analysis.
 
+### Macro pilot and organization chart
+
+The organization pie chart describes **completed sampled windows**, not lesson
+duration. Unknown organization is included; failed/unprocessed windows are shown
+separately. Whole-class activity is not necessarily lecture, and grouped seating
+does not establish collaboration. Existing runs can display this chart immediately.
+
+New runs can explicitly enable `config.macro_analysis=true` (off by default).
+The worker then uses the configured Gemini vision model for separate visual
+artifact extraction, episode synthesis, and evidence audit calls. This adds paid
+calls; existing runs are neither reprocessed nor overwritten. Extracted artifacts
+contain legible text and image references. Macro episodes link artifacts and task
+instructions to planning, choice, monitoring, revision, self-evaluation, help-seeking
+and co-regulation, distinguishing direct/indirect/mixed support, responsibility,
+opportunity and observed uptake. Results are versioned as `indirect-srl-macro-v1`
+inside `environment_runs.summary.macro`. A macro failure preserves window results.
+
+Install `0004_environment_macro_reviews.sql` after migration 0003 to enable
+owner-only append-only episode reviews. Until installed, results remain readable
+and the UI explains that saving episode reviews is unavailable. Corrections are
+recorded as notes; they do not automatically rewrite boundaries or model claims.
+
+This first macro version links sampled artifacts; it does not perform geometric
+object tracking/cropping or recover unreadable writing. Boundaries are approximate,
+gaps remain explicit, and earlier task instructions cannot establish uptake.
+The audit reviews extracted descriptions and transcript, not original pixels;
+it is not independent human validation. Before research use, compare human and
+model coding on visually similar but functionally different examples (copying a
+table versus using it for revision; grouped seating versus shared decisions).
+No SRL-development score or causal claim is produced.
+
+New macro runs also produce `summary.macro.lesson_overview` (protocol
+`indirect-srl-overview-v1`): a cited overall conclusion, chronological progression,
+support patterns, responsibility trajectory, opportunities and source conflicts.
+Two additional Gemini calls synthesize and audit this layer. Rejected episode
+claims cannot be revived, and failed overview synthesis preserves the episodes.
+Recommendations are separate from evidence-supported missed opportunities;
+missing images, missing tags or unseen uptake never establish a missed opportunity.
+
+Optionally select a tagging session of the same video. The authenticated API
+verifies visibility and video membership, then freezes at most 400 tags with their
+labels, text and times into `config.tagging_snapshot`. Client-supplied snapshots
+are rejected. The selector shows the latest 100 accessible sessions. Text limits,
+omissions and empty sources are disclosed. Tags remain fallible interpretations;
+combined claims require overlap with both an episode and cited current evidence.
+Without a selected session, synthesis uses sampled observations and available
+transcript. No new database migration is required for the overview itself.
+Existing runs are not reprocessed. Deploy both the web app and worker to enable
+new overview runs; changing only the web app does not upgrade a remote worker.
+
+Additional offline checks:
+
+```sh
+python3 -m unittest discover -s ai_worker -p 'test_environment*.py' -v
+cd scope-system
+node --test tests/environment.test.mjs tests/environment-organization.test.mjs
+```
+
 ### Protocol and evidence
 
 - Protocol `indirect-srl-pilot-v1` lives in `ai_worker/environment_protocol.py`.

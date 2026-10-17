@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Upload, X, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 
 type Mode = "upload" | "link";
@@ -100,162 +101,176 @@ export function UploadModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="modal-root">
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className="modal-backdrop"
         onClick={handleClose}
       />
 
-      <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-6 z-10">
-        <h2 className="text-lg font-semibold">Add Video</h2>
-
-        {/* Mode toggle */}
-        <div className="flex rounded-lg border border-border overflow-hidden text-sm font-medium">
+      <div
+        className="modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-video-title"
+      >
+        <div className="modal-header">
+          <h2 id="add-video-title" className="modal-title">
+            <Upload size={16} className="text-primary" aria-hidden />
+            Add Video
+          </h2>
           <button
             type="button"
-            onClick={() => { setMode("upload"); setError(""); }}
-            className={`flex-1 py-2 transition-colors ${
-              mode === "upload"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-secondary/20"
-            }`}
+            onClick={handleClose}
+            className="icon-btn"
+            aria-label="Close"
           >
-            Upload file
-          </button>
-          <button
-            type="button"
-            onClick={() => { setMode("link"); setError(""); }}
-            className={`flex-1 py-2 transition-colors ${
-              mode === "link"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-secondary/20"
-            }`}
-          >
-            From link
+            <X size={16} aria-hidden />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium" htmlFor="add-title">
-              Title
-            </label>
-            <input
-              id="add-title"
-              type="text"
-              required
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full bg-secondary/30 border border-border rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground"
-              placeholder="Enter video title"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium" htmlFor="add-folder">
-              Folder <span className="text-muted-foreground font-normal">(optional)</span>
-            </label>
-            <input
-              id="add-folder"
-              type="text"
-              value={folderPath}
-              onChange={(e) => setFolderPath(e.target.value)}
-              className="w-full bg-secondary/30 border border-border rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground"
-              placeholder="e.g. Class A/Lesson 1"
-            />
-            <p className="text-xs text-muted-foreground">
-              Use &quot;/&quot; to nest folders. Leave blank to keep this video uncategorized.
-            </p>
-          </div>
-
-          {mode === "link" ? (
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium" htmlFor="add-url">
-                Video URL
-              </label>
-              <input
-                id="add-url"
-                type="url"
-                required
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                className="w-full bg-secondary/30 border border-border rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground"
-                placeholder="https://vimeo.com/... or YouTube / Google Drive"
-              />
-              <p className="text-xs text-muted-foreground">
-                Supports Vimeo (including private links), YouTube, and Google Drive.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium" htmlFor="upload-file">
-                Video file
-              </label>
-              <label
-                htmlFor="upload-file"
-                className="flex items-center gap-3 w-full bg-secondary/30 border border-border rounded-md px-3 py-2 text-sm cursor-pointer hover:bg-secondary/10 transition-colors"
-              >
-                <span className="shrink-0 text-muted-foreground">Choose file</span>
-                <span className="text-muted-foreground truncate">
-                  {file ? file.name : "No file selected"}
-                </span>
-              </label>
-              <input
-                id="upload-file"
-                type="file"
-                accept="video/*"
-                className="sr-only"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              />
-            </div>
-          )}
-
-          {error && (
-            <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">
-              {error}
-            </p>
-          )}
-
-          <div className="flex items-center justify-end gap-3 pt-2">
+        <div className="modal-body space-y-5">
+          {/* Mode toggle */}
+          <div className="segmented w-full">
             <button
               type="button"
-              onClick={handleClose}
-              className="px-4 py-2 rounded-md text-sm font-medium text-muted-foreground hover:bg-secondary/10 transition-colors"
+              onClick={() => { setMode("upload"); setError(""); }}
+              aria-pressed={mode === "upload"}
+              className="segmented-item flex-1 h-8 text-sm"
             >
-              Cancel
+              Upload file
             </button>
             <button
-              type="submit"
-              disabled={uploading}
-              className="bg-primary hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed text-primary-foreground px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2"
+              type="button"
+              onClick={() => { setMode("link"); setError(""); }}
+              aria-pressed={mode === "link"}
+              className="segmented-item flex-1 h-8 text-sm"
             >
-              {uploading && (
-                <svg
-                  className="animate-spin h-4 w-4 shrink-0"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8v8H4z"
-                  />
-                </svg>
-              )}
-              {uploading
-                ? mode === "link" ? "Adding..." : "Uploading..."
-                : mode === "link" ? "Add video" : "Upload"}
+              From link
             </button>
           </div>
-        </form>
+
+          <form onSubmit={handleSubmit} aria-busy={uploading} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="field-label" htmlFor="add-title">
+                Title
+              </label>
+              <input
+                id="add-title"
+                type="text"
+                required
+                dir="auto"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="field"
+                placeholder="Enter video title"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="field-label" htmlFor="add-folder">
+                Folder <span className="text-muted-foreground font-normal">(optional)</span>
+              </label>
+              <input
+                id="add-folder"
+                type="text"
+                dir="auto"
+                value={folderPath}
+                onChange={(e) => setFolderPath(e.target.value)}
+                className="field"
+                placeholder="e.g. Class A/Lesson 1"
+              />
+              <p className="field-hint">
+                Use &quot;/&quot; to nest folders. Leave blank to keep this video uncategorized.
+              </p>
+            </div>
+
+            {mode === "link" ? (
+              <div className="space-y-1.5">
+                <label className="field-label" htmlFor="add-url">
+                  Video URL
+                </label>
+                <input
+                  id="add-url"
+                  type="url"
+                  required
+                  dir="ltr"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  className="field"
+                  placeholder="https://vimeo.com/... or YouTube / Google Drive"
+                />
+                <p className="field-hint">
+                  Supports Vimeo (including private links), YouTube, and Google Drive.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <label className="field-label" htmlFor="upload-file">
+                  Video file
+                </label>
+                {/* The ring shows keyboard focus of the visually hidden file input. */}
+                <div className="rounded-xl has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-ring has-[input:focus-visible]:ring-offset-2 has-[input:focus-visible]:ring-offset-card">
+                  <label
+                    htmlFor="upload-file"
+                    className="flex flex-col items-center justify-center gap-2 w-full rounded-xl border border-dashed border-input bg-secondary/40 px-4 py-6 text-sm text-center cursor-pointer transition-colors hover:border-primary/50 hover:bg-primary/5"
+                  >
+                    <Upload size={18} className="text-muted-foreground" aria-hidden />
+                    <span className="btn btn-secondary btn-sm">Choose file</span>
+                    {file ? (
+                      <span className="flex items-center justify-center gap-1.5 min-w-0 max-w-full text-foreground">
+                        <CheckCircle2 size={14} className="shrink-0 text-success" aria-hidden />
+                        <span className="truncate" dir="auto">{file.name}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                          ({(file.size / 1e6).toFixed(1)} MB)
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground truncate max-w-full">
+                        No file selected
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    id="upload-file"
+                    type="file"
+                    accept="video/*"
+                    className="sr-only"
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  />
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <div role="alert" className="callout tone-danger">
+                <AlertTriangle size={16} className="callout-icon" aria-hidden />
+                <p className="min-w-0" dir="auto">{error}</p>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleClose}
+                className="btn btn-outline"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={uploading}
+                className="btn btn-primary"
+              >
+                {uploading && (
+                  <Loader2 size={16} className="shrink-0 animate-spin" aria-hidden />
+                )}
+                {uploading
+                  ? mode === "link" ? "Adding..." : "Uploading..."
+                  : mode === "link" ? "Add video" : "Upload"}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );

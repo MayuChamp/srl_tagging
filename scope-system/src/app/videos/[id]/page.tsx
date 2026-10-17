@@ -1,22 +1,16 @@
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { VideoPlayer, VideoMarker } from "@/components/video/VideoPlayer";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Layers, Clock, AlertTriangle, VideoOff } from "lucide-react";
+import { CODE_COLORS, codeColor } from "@/lib/codeColors";
 
-const CODE_COLORS: Record<string, string> = {
-  "D_PLAN": "#3b82f6",
-  "D_MONITOR": "#2563eb",
-  "D_REFLECT": "#1d4ed8",
-  "I_SCAFFOLD": "#10b981",
-  "S_PLAN_TALK": "#8b5cf6",
-  "S_MONITOR_TALK": "#7c3aed",
-  "S_EVAL_TALK": "#6d28d9",
-  "S_GOAL_SET": "#a855f7",
-  "N_ATTENTION": "#f59e0b",
-  "N_GESTURE_FOCUS": "#ea580c",
-  "P_INTONATION_ENCOURAGE": "#ec4899",
-  "P_INTONATION_QUESTION": "#db2777",
-  "I_FEEDBACK": "#059669",
+// Status → semantic tone (same mapping as the Video Library cards).
+const STATUS_TONE: Record<string, string> = {
+  pending: "tone-warning",
+  processing: "tone-primary",
+  completed: "tone-success",
+  failed: "tone-danger",
 };
 
 function formatTime(seconds: number): string {
@@ -42,15 +36,18 @@ export default async function VideoDetailPage({
 
   if (!video) {
     return (
-      <div className="p-8 max-w-7xl mx-auto space-y-6">
-        <Link href="/videos" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-          <ArrowLeft size={15} /> Video Library
+      <div className="page space-y-6">
+        <Link href="/videos" className="back-link">
+          <ArrowLeft size={15} aria-hidden /> Video Library
         </Link>
-        <div className="bg-card border border-border rounded-xl p-16 flex flex-col items-center justify-center text-muted-foreground gap-4">
-          <p className="text-lg font-medium">Video not found</p>
+        <div className="empty-state py-16">
+          <div className="empty-state-icon">
+            <VideoOff size={22} aria-hidden />
+          </div>
+          <p className="empty-state-title text-base">Video not found</p>
           <Link
             href="/videos"
-            className="text-primary hover:underline text-sm"
+            className="btn btn-link text-sm"
           >
             Return to Video Library
           </Link>
@@ -98,63 +95,83 @@ export default async function VideoDetailPage({
     confidence: tag.confidence_score ?? undefined,
   }));
 
-  const statusColors: Record<string, string> = {
-    pending: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-    processing: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    completed: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-    failed: "bg-red-500/20 text-red-400 border-red-500/30",
-  };
-
   const statusClass =
-    statusColors[video.status as string] ??
-    "bg-secondary/30 text-muted-foreground border-border";
+    STATUS_TONE[video.status as string] ??
+    "tone-neutral";
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="page space-y-6">
       <Link
         href="/videos"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        className="back-link"
       >
-        <ArrowLeft size={15} /> Video Library
+        <ArrowLeft size={15} aria-hidden /> Video Library
       </Link>
 
-      <header className="flex items-start justify-between gap-4">
-        <h1 className="text-2xl font-bold tracking-tight">{video.title}</h1>
-        <span
-          className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium border ${statusClass}`}
-        >
-          {video.status}
-        </span>
+      <header className="space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <h1 className="page-title min-w-0 break-words" dir="auto">{video.title || "Untitled Video"}</h1>
+          <span
+            className={`badge badge-lg capitalize shrink-0 mt-1.5 ${statusClass}`}
+          >
+            <span className={`status-dot ${statusClass} ${video.status === "processing" ? "animate-pulse" : ""}`} aria-hidden />
+            {video.status}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href={`/videos/${id}/environment`} className="btn btn-soft">
+            <Layers size={15} aria-hidden />
+            <span><span lang="he" dir="rtl">ניתוח סביבת הלמידה</span> · <span>Indirect SRL</span></span>
+          </Link>
+        </div>
       </header>
-      <Link href={`/videos/${id}/environment`} className="inline-flex text-sm text-primary hover:underline">ניתוח סביבת הלמידה · Indirect SRL</Link>
 
       {!analysis ? (
-        <div className="bg-card border border-dashed border-border rounded-xl p-12 flex flex-col items-center justify-center text-muted-foreground gap-3">
-          <p className="text-base font-medium">Analysis pending</p>
-          <p className="text-sm">
+        <div className="empty-state py-16">
+          {video.status === "failed" ? (
+            <div className="icon-tile icon-tile-lg tone-danger">
+              <AlertTriangle size={22} aria-hidden />
+            </div>
+          ) : (
+            <div className="empty-state-icon">
+              <Clock size={22} aria-hidden />
+            </div>
+          )}
+          <p className="empty-state-title text-base">Analysis pending</p>
+          <p className="empty-state-text">
             This video has not been analysed yet. Check back soon.
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 min-w-0">
             <VideoPlayer url={video.storage_path} markers={markers} />
           </div>
 
-          <div className="flex flex-col gap-4">
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-              Tags ({tags.length})
-            </h2>
+          <div className="panel flex flex-col min-h-0 lg:sticky lg:top-6 lg:self-start">
+            <div className="panel-header">
+              <h2 className="eyebrow">
+                Tags ({tags.length})
+              </h2>
+            </div>
 
-            <div className="flex flex-col gap-3 overflow-y-auto max-h-[600px] pr-1">
+            <div
+              className="flex flex-col gap-2 overflow-y-auto max-h-[600px] lg:max-h-[calc(100vh-12rem)] p-3"
+              tabIndex={0}
+              role="region"
+              aria-label="Tags"
+            >
               {tags.length === 0 && (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-muted-foreground px-1 py-6 text-center">
                   No tags for this analysis.
                 </p>
               )}
 
               {tags.map((tag) => {
-                const color = CODE_COLORS[tag.code_id] ?? "#ef4444";
+                // Display-only neutral fallback for unknown codes (the timeline
+                // markers above keep their original #ef4444 fallback).
+                const color = codeColor(tag.code_id);
                 const confidence =
                   tag.confidence_score != null
                     ? Math.round(tag.confidence_score * 100)
@@ -163,43 +180,47 @@ export default async function VideoDetailPage({
                 return (
                   <div
                     key={tag.id}
-                    className="bg-card border border-border rounded-xl p-4 space-y-2"
+                    className="list-card space-y-2"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
-                          style={{ backgroundColor: color }}
-                        />
-                        <span className="text-sm font-semibold">
-                          {tag.code_id}
-                        </span>
-                      </div>
-                      <span className="text-xs text-muted-foreground font-mono">
+                      <span
+                        className="code-chip code-chip-md font-mono min-w-0"
+                        style={{ "--code": color } as CSSProperties}
+                      >
+                        <span className="code-dot" aria-hidden />
+                        <span className="truncate">{tag.code_id}</span>
+                      </span>
+                      <span className="time-pill shrink-0">
                         {formatTime(tag.start_time)} &ndash;{" "}
                         {formatTime(tag.end_time)}
                       </span>
                     </div>
 
                     {tag.evidence_text && (
-                      <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">
+                      <p
+                        dir="auto"
+                        className="text-start text-xs text-muted-foreground leading-relaxed line-clamp-3"
+                        title={tag.evidence_text}
+                      >
                         {tag.evidence_text}
                       </p>
                     )}
 
                     {confidence != null && (
                       <div className="space-y-1">
-                        <div className="flex justify-between text-xs text-muted-foreground">
+                        <div className="flex justify-between text-xs text-muted-foreground tabular-nums">
                           <span>Confidence</span>
                           <span>{confidence}%</span>
                         </div>
-                        <div className="h-1.5 bg-secondary/30 rounded-full overflow-hidden">
+                        <div className="meter">
                           <div
-                            className="h-full rounded-full transition-all"
+                            className="meter-fill transition-all"
                             style={{
                               width: `${confidence}%`,
-                              backgroundColor: color,
-                            }}
+                              // Hue of the code, pulled toward the text colour so
+                              // pale/deep codes stay visible on the track.
+                              "--tone": `color-mix(in oklab, ${color} 60%, var(--foreground))`,
+                            } as CSSProperties}
                           />
                         </div>
                       </div>

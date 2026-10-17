@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { isUuid, parseEnvironmentConfig, type EnvironmentObservation } from "@/lib/environment";
+import { buildTaggingSnapshot, isUuid, parseEnvironmentConfig, type EnvironmentObservation, type EnvironmentTaggingSession } from "@/lib/environment";
 
 const RUN_FIELDS = "id,video_id,created_at,status,protocol_version,config,models,progress,summary,error";
 const BUCKET = "environment-evidence";
@@ -32,7 +32,16 @@ export async function GET(request: NextRequest) {
     if (!result.data) return json({ error: "הרצה לא נמצאה" }, 404);
     run = result.data;
   }
-  if (!run) return json({ runs: [], run: null, observations: [], reviews: [] });
+  // Uses the signed-in user's RLS visibility, and only sessions attached to this video.
+  const sessionResult = await db.from("analyses").select("id,created_at,is_ai_generated,summary_metrics->>session_name")
+    .eq("video_id", videoId).order("created_at", { ascending: false }).limit(100);
+  const taggingSessions: EnvironmentTaggingSession[] = (sessionResult.data ?? []).map(session => ({
+    id: session.id, name: typeof session.session_name === "string" && session.session_name.trim()
+      ? session.session_name.slice(0, 200) : session.is_ai_generated ? "תיוג אוטומטי" : "סשן תיוג",
+    created_at: session.created_at, is_ai_generated: session.is_ai_generated === true,
+  }));
+  const sessionResponse = { taggingSessions, taggingSessionsUnavailable: !!sessionResult.error };
+  if (!run) return json({ runs: [], run: null, observations: [], reviews: [], macroReviews: [], ...sessionResponse });
   const result = await db.from("environment_observations").select("*")
     .eq("run_id", run.id).order("window_index");
   if (result.error) return databaseError(result.error);
@@ -53,7 +62,14 @@ export async function GET(request: NextRequest) {
     .in("observation_id", observations.map(o => o.id)).order("created_at", { ascending: false })
     : { data: [], error: null };
   if (reviewsResult.error) return databaseError(reviewsResult.error);
-  return json({ runs, run, observations, reviews: reviewsResult.data ?? [] });
+  const macroReviews = await db.from("environment_macro_reviews").select("*")
+    .eq("run_id", run.id).order("created_at", { ascending: false });
+  const macroReviewsUnavailable = !!macroReviews.error;
+  if (macroReviews.error && !["42P01", "PGRST205"].includes(macroReviews.error.code)) {
+    return databaseError(macroReviews.error);
+  }
+  return json({ runs, run, observations, reviews: reviewsResult.data ?? [],
+    macroReviews: macroReviews.data ?? [], macroReviewsUnavailable, ...sessionResponse });
 }
 
 export async function POST(request: NextRequest) {
@@ -74,6 +90,24 @@ export async function POST(request: NextRequest) {
   } catch {
     return json({ error: "לניתוח סביבת הלמידה יש לבחור סרטון המאוחסן בספריית המערכת." }, 400);
   }
+  if (config.tagging_session_id) {
+    const selected = await db.from("analyses").select("id,video_id,created_at,is_ai_generated,codebook_id,summary_metrics->>session_name")
+      .eq("id", config.tagging_session_id).eq("video_id", body.videoId).maybeSingle();
+    if (selected.error) return databaseError(selected.error);
+    if (!selected.data) return json({ error: "סשן התיוג אינו נגיש או אינו שייך לשיעור הזה." }, 404);
+    const session = selected.data;
+    const tags = await db.from("tags").select("id,code_id,start_time,end_time,evidence_text", { count: "exact" })
+      .eq("analysis_id", session.id).order("start_time").order("id").limit(400);
+    if (tags.error) return databaseError(tags.error);
+    const codebook = session.codebook_id ? await db.from("codebooks").select("codes")
+      .eq("id", session.codebook_id).maybeSingle() : { data: null, error: null };
+    if (codebook.error) return databaseError(codebook.error);
+    config.tagging_snapshot = buildTaggingSnapshot({ id: session.id,
+      name: typeof session.session_name === "string" && session.session_name.trim()
+        ? session.session_name : session.is_ai_generated ? "תיוג אוטומטי" : "סשן תיוג",
+      created_at: session.created_at, is_ai_generated: session.is_ai_generated === true,
+    }, tags.data ?? [], tags.count ?? tags.data?.length ?? 0, codebook.data?.codes);
+  }
   const { data, error } = await db.from("environment_runs").insert({
     video_id: body.videoId, requested_by: user.id, config,
   }).select(RUN_FIELDS).single();
@@ -87,6 +121,23 @@ export async function PATCH(request: NextRequest) {
   const { data: { user } } = await db.auth.getUser();
   if (!user) return json({ error: "נדרשת התחברות" }, 401);
   const body = await request.json().catch(() => null);
+  if (body?.runId !== undefined || body?.episodeId !== undefined) {
+    if (!isUuid(body?.runId) || typeof body?.episodeId !== "string" || !body.episodeId.trim()
+      || body.episodeId.length > 120 || !["accepted", "needs_correction", "rejected"].includes(body?.verdict)
+      || typeof body?.notes !== "string" || body.notes.length > 4000
+      || (body.verdict === "needs_correction" && !body.notes.trim())) {
+      return json({ error: "יש לבחור אפיזודה, החלטה תקינה והערת תיקון במידת הצורך." }, 400);
+    }
+    const result = await db.from("environment_macro_reviews").insert({ run_id: body.runId,
+      reviewer_id: user.id, episode_id: body.episodeId, verdict: body.verdict,
+      notes: body.notes.trim() }).select("*").single();
+    if (result.error && ["42P01", "PGRST205"].includes(result.error.code)) {
+      return json({ error: "שמירת ביקורת מאקרו דורשת התקנת מיגרציה 0004." }, 503);
+    }
+    if (result.error?.code === "42501") return json({ error: "האפיזודה אינה נגישה." }, 403);
+    if (result.error) return databaseError(result.error);
+    return json({ review: result.data });
+  }
   if (!isUuid(body?.observationId) || !["accepted", "needs_correction", "rejected"].includes(body?.verdict)
     || typeof body?.notes !== "string" || body.notes.length > 4000
     || (body.verdict === "needs_correction" && !body.notes.trim())) {

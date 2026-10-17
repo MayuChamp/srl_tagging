@@ -11,9 +11,9 @@ export function UploadButton() {
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-all glow-primary hover:scale-[1.02] active:scale-[0.98]"
+        className="btn btn-primary btn-lg"
       >
-        <Upload size={16} />
+        <Upload size={16} aria-hidden />
         Upload Video
       </button>
       <UploadModal isOpen={isOpen} onClose={() => setIsOpen(false)} />

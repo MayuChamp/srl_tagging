@@ -11,6 +11,7 @@ import {
   ResponsiveContainer,
   Brush,
 } from "recharts";
+import { BarChart2 } from "lucide-react";
 
 type Tag = {
   id: string | number;
@@ -50,14 +51,23 @@ export function ActivityChart({ tags }: ActivityChartProps) {
 
   if (data.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-muted-foreground border-2 border-dashed border-border/50 rounded-lg">
-        Waiting for AI to generate tags...
+      <div className="empty-state flex-1">
+        <div className="empty-state-icon" aria-hidden="true">
+          <BarChart2 size={22} />
+        </div>
+        <div>
+          <p className="empty-state-title">Waiting for AI to generate tags...</p>
+          <p className="empty-state-text mt-1">Events will appear here per minute once tags exist</p>
+        </div>
       </div>
     );
   }
 
+  // Recharts takes CSS variables (not Tailwind classes), so every color
+  // below follows the light/dark theme tokens. Single series in the brand
+  // terracotta (var(--primary)); grid/axes are recessive solid hairlines.
   return (
-    <div className="flex-1 min-h-[300px] w-full mt-4">
+    <div className="flex-1 min-h-[300px] w-full mt-2" role="figure" aria-label="SRL events per minute">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
           data={data}
@@ -68,36 +78,51 @@ export function ActivityChart({ tags }: ActivityChartProps) {
             bottom: 5,
           }}
         >
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#333" />
-          <XAxis 
-            dataKey="label" 
-            tick={{ fill: "#888", fontSize: 12 }} 
+          <CartesianGrid vertical={false} stroke="var(--border)" />
+          <XAxis
+            dataKey="label"
+            tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
             tickLine={false}
-            axisLine={{ stroke: "#333" }}
+            axisLine={{ stroke: "var(--border)" }}
+            minTickGap={12}
+            interval="preserveStartEnd"
+            tickMargin={8}
           />
-          <YAxis 
-            tick={{ fill: "#888", fontSize: 12 }} 
+          <YAxis
+            tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
             tickLine={false}
-            axisLine={{ stroke: "#333" }}
+            axisLine={{ stroke: "var(--border)" }}
             allowDecimals={false}
           />
-          <Tooltip 
-            cursor={{ fill: "#ffffff10" }}
-            contentStyle={{ backgroundColor: "#1e293b", borderColor: "#334155", color: "#fff", borderRadius: "8px" }}
+          <Tooltip
+            cursor={{ fill: "var(--secondary)", opacity: 0.6 }}
+            contentStyle={{
+              backgroundColor: "var(--popover)",
+              border: "1px solid var(--border)",
+              color: "var(--popover-foreground)",
+              borderRadius: 12,
+              boxShadow: "var(--shadow-md)",
+              fontSize: 12,
+            }}
+            labelStyle={{ color: "var(--muted-foreground)" }}
+            itemStyle={{ color: "var(--popover-foreground)" }}
             labelFormatter={(label) => `Minute ${label}`}
           />
-          <Bar 
-            dataKey="count" 
-            fill="#3b82f6" 
+          <Bar
+            dataKey="count"
+            fill="var(--primary)"
             radius={[4, 4, 0, 0]}
+            maxBarSize={24}
+            activeBar={{ fillOpacity: 0.8 }}
             name="SRL Events"
           />
           {data.length > 5 && (
-            <Brush 
-              dataKey="label" 
-              height={25} 
-              stroke="#3b82f6" 
-              fill="var(--background)"
+            <Brush
+              dataKey="label"
+              height={25}
+              stroke="var(--primary)"
+              fill="var(--secondary)"
+              travellerWidth={8}
             />
           )}
         </BarChart>

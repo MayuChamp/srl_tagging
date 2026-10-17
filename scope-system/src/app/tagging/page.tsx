@@ -1,16 +1,15 @@
 "use client";
 
-import Link from "next/link";
-
-import React, { useState, useRef, useEffect, useMemo, Suspense } from "react";
+import React, { useState, useRef, useEffect, useMemo, useId, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { VideoPlayer, type VideoMarker, type Caption } from "@/components/video/VideoPlayer";
 import {
-  Save, Tag, Clock, AlignLeft, ShieldCheck,
+  Save, Tag, Clock, AlertTriangle, SearchX,
   FolderOpen, Download, Upload, Trash2, Library, X, Video,
   Search, RotateCcw, ChevronDown, PlayCircle, Captions, FileSpreadsheet,
   Pencil, Check, Play, Bot, Sparkles, CheckCheck, Mic, FileText,
-  SkipBack, SkipForward,
+  SkipBack, SkipForward, Loader2, ArrowUpRight,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase/client";
@@ -264,16 +263,50 @@ const STG_ITEMS = [
   { key: 'stgWhenNot' as keyof TdsMetaForm, label: 'מתי לא להשתמש', shortcut: '5', tip: '"אם אין שני דברים להשוות — לא מתאים"' },
 ] as const;
 
+// ── Presentational tone helpers (class names only — no data logic) ─────────
+// Tinted text that stays readable on its own tone tint; pair with a tone-* class.
+const TONE_TEXT = "text-[color:color-mix(in_oklab,var(--tone)_80%,var(--foreground))]";
+
+// Strength / confidence → tone. Same 0.8 / 0.5 thresholds as the labels and the Excel export.
+function strengthTone(conf: number): string {
+  return conf >= 0.8 ? "tone-success" : conf >= 0.5 ? "tone-warning" : "tone-danger";
+}
+
+// TDS basic class → tone: META success · OVERLAP warning · otherwise (COG) info.
+function basicClassTone(cls: string | null | undefined): string {
+  return cls === "META" ? "tone-success" : cls === "OVERLAP" ? "tone-warning" : "tone-info";
+}
+
+// META_STG score → tone: 0 neutral · 1 danger · 2–3 warning · 4–5 success.
+function scoreTone(n: number): string {
+  return n >= 4 ? "tone-success" : n >= 2 ? "tone-warning" : n >= 1 ? "tone-danger" : "tone-neutral";
+}
+
+// Sub-labels inside the TDS box (Hebrew: never uppercase / tracked).
+const TDS_SUBLABEL = "text-xs font-semibold text-secondary-foreground";
+
+// Numbered form-step labels in the new-tag form (a .step-num precedes the existing label text).
+// Same size/weight as the TdsMetaPanel step-5 title so the five steps read as one series.
+const STEP_LABEL = "flex items-center gap-2 text-sm font-semibold text-foreground";
+
 // ── TdsMetaPanel ────────────────────────────────────────────────────────────
 function TdsMetaPanel({
   form,
   onChange,
+  shortcutsActive = false,
+  step,
 }: {
   form: TdsMetaForm;
   onChange: React.Dispatch<React.SetStateAction<TdsMetaForm>>;
+  /** Presentational: true for the panel the c/o/m + 1–5 keyboard listener currently targets. */
+  shortcutsActive?: boolean;
+  /** Presentational: form step number drawn before the title (new-tag form only). */
+  step?: number;
 }) {
   const computed = computeTdsMeta(form);
   const [hoveredTip, setHoveredTip] = useState<string | null>(null);
+  const reasoningId = useId();
+  const introTypeId = useId();
 
   // Suggest (never force) a basicClass from the STG pattern — naming-only implies OVERLAP,
   // any other component present implies META. The user must click to accept.
@@ -286,217 +319,223 @@ function TdsMetaPanel({
   }, [form]);
 
   return (
-    <div className="space-y-3 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3">
+    <div dir="rtl" lang="he" className="space-y-2.5">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wide flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
-          TDS Meta-Coding
+      <div className="flex flex-wrap items-center gap-2 min-h-7">
+        <h4 className="flex items-center gap-2 text-sm font-semibold text-foreground min-w-0">
+          {step !== undefined
+            ? <span className="step-num" aria-hidden="true">{step}</span>
+            : <span className="size-2 rounded-full bg-primary shrink-0" aria-hidden="true" />}
+          <bdi>TDS Meta-Coding</bdi>
         </h4>
+        {shortcutsActive && (
+          <span className="badge tone-primary">⌨ פעיל</span>
+        )}
         {suggestedBasicClass && form.basicClass !== suggestedBasicClass && (
           <button
             onClick={() => onChange(f => ({ ...f, basicClass: suggestedBasicClass }))}
-            className="text-[10px] text-indigo-400 border border-indigo-400/30 px-2 py-0.5 rounded hover:bg-indigo-400/10 transition-colors"
+            title="החילי סיווג מוצע לפי רכיבי STG"
+            className="btn btn-soft btn-sm rounded-full ms-auto shrink-0"
           >
-            הצעה: {suggestedBasicClass}
+            <Sparkles size={12} aria-hidden="true" />
+            הצעה: <bdi className="font-mono">{suggestedBasicClass}</bdi>
           </button>
         )}
       </div>
 
-      {/* META_INTRO */}
-      <div className="space-y-1.5">
-        <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">META_INTRO</label>
-        <div className="flex gap-2">
-          {([true, false] as const).map(val => (
-            <button key={String(val)} type="button"
-              onClick={() => onChange(f => ({ ...f, metaIntro: val, metaIntroType: val ? f.metaIntroType : '' }))}
-              className={`flex-1 py-1.5 rounded-md text-xs font-semibold border transition-all ${
-                form.metaIntro === val
-                  ? val
-                    ? 'border-primary/50 bg-primary/10 text-primary'
-                    : 'border-border bg-secondary/40 text-muted-foreground'
-                  : 'border-border text-muted-foreground hover:border-primary/30'
-              }`}
-            >
-              {val ? 'כן' : 'לא'}
-            </button>
-          ))}
-        </div>
-        {form.metaIntro && (
-          <select
-            value={form.metaIntroType}
-            onChange={e => onChange(f => ({ ...f, metaIntroType: e.target.value as MetaIntroType }))}
-            className="w-full bg-background border border-border rounded-md px-2 py-1.5 text-xs focus:outline-none focus:border-primary"
-            dir="rtl"
-          >
-            <option value="">בחרי סוג META_INTRO</option>
-            {META_INTRO_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        )}
-      </div>
+      {/* Body — tinted box with a hairline; the border turns terracotta while the shortcuts target this panel */}
+      <div className={`space-y-4 rounded-2xl border bg-accent p-3.5 transition-colors ${shortcutsActive ? "border-primary/45" : "border-border"}`}>
 
-      {/* META_STG components */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
-            רכיבי META_STG
-          </label>
+        {/* META_INTRO */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2.5">
+            <label htmlFor={form.metaIntro ? introTypeId : undefined} className="font-mono text-xs font-semibold text-secondary-foreground">
+              <bdi>META_INTRO</bdi>
+            </label>
+            <div role="group" aria-label="META_INTRO" className="segmented w-36">
+              {([true, false] as const).map(val => (
+                <button key={String(val)} type="button"
+                  aria-pressed={form.metaIntro === val}
+                  onClick={() => onChange(f => ({ ...f, metaIntro: val, metaIntroType: val ? f.metaIntroType : '' }))}
+                  className="segmented-item flex-1"
+                >
+                  {val ? 'כן' : 'לא'}
+                </button>
+              ))}
+            </div>
+          </div>
+          {form.metaIntro && (
+            <select
+              id={introTypeId}
+              value={form.metaIntroType}
+              onChange={e => onChange(f => ({ ...f, metaIntroType: e.target.value as MetaIntroType }))}
+              className="field field-sm"
+              dir="rtl"
+            >
+              <option value="">בחרי סוג META_INTRO</option>
+              {META_INTRO_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
+        </div>
+
+        {/* META_STG components */}
+        <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <span className="text-[9px] text-muted-foreground/40 font-mono">1–5</span>
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-              computed.metaStgScore >= 4 ? 'bg-emerald-500/15 text-emerald-400' :
-              computed.metaStgScore >= 2 ? 'bg-amber-500/15 text-amber-400' :
-              'bg-secondary/50 text-muted-foreground'
-            }`}>
-              {computed.metaStgScore}/5
+            <label className={TDS_SUBLABEL}>
+              רכיבי META_STG
+            </label>
+            <span className="kbd"><bdi>1–5</bdi></span>
+            <span className={`badge font-mono ms-auto ${scoreTone(computed.metaStgScore)}`}>
+              <bdi>{computed.metaStgScore}/5</bdi>
             </span>
           </div>
+
+          {/* Progress bar */}
+          <div dir="ltr" className="grid grid-cols-5 gap-1" aria-hidden="true">
+            {[0,1,2,3,4].map(i => (
+              <div key={i} className={`h-1.5 rounded-full transition-colors ${
+                i < computed.metaStgScore
+                  ? `${scoreTone(computed.metaStgScore)} bg-[var(--tone)]`
+                  : 'bg-secondary'
+              }`} />
+            ))}
+          </div>
+
+          {/* STG rows + tip: the tip is absolutely positioned so hovering never shifts the blocks below */}
+          <div className="relative">
+            <div className="space-y-0.5">
+              {STG_ITEMS.map((item, idx) => {
+                const checked = !!form[item.key];
+                const isNamingOnly = item.key === 'stgNaming' && form.stgNaming && !form.stgWhen && !form.stgHow && !form.stgWhy && !form.stgWhenNot;
+                return (
+                  <React.Fragment key={item.key}>
+                    {idx === 1 && (
+                      <div className="flex items-center gap-2 px-1 pt-1.5 pb-0.5">
+                        <span className="text-2xs font-semibold text-muted-foreground">הסבר</span>
+                        <div className="flex-1 border-t border-border" />
+                      </div>
+                    )}
+                    <label
+                      className={`flex items-center gap-2.5 min-h-9 px-2.5 rounded-lg cursor-pointer transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/40 ${
+                        checked ? 'bg-primary/8' : 'hover:bg-secondary/70'
+                      }`}
+                    >
+                      <input type="checkbox" checked={checked}
+                        onChange={e => onChange(f => ({ ...f, [item.key]: e.target.checked }))}
+                        className="size-4 shrink-0 cursor-pointer"
+                      />
+                      <span className={`text-sm min-w-0 ${checked ? 'text-foreground font-medium' : 'text-secondary-foreground'}`}>
+                        {item.label}
+                      </span>
+                      <kbd className="kbd shrink-0" aria-hidden="true">{item.shortcut}</kbd>
+                      {isNamingOnly && (
+                        <span className="badge tone-warning shrink-0"> ← בלעדי = OVERLAP</span>
+                      )}
+                      <span className="flex-1" aria-hidden="true" />
+                      <button type="button"
+                        aria-label={`דוגמה: ${item.label}`}
+                        onMouseEnter={() => setHoveredTip(item.tip)}
+                        onMouseLeave={() => setHoveredTip(null)}
+                        onFocus={() => setHoveredTip(item.tip)}
+                        onBlur={() => setHoveredTip(null)}
+                        onClick={e => e.preventDefault()}
+                        className="icon-btn icon-btn-sm text-sm leading-none"
+                      >ⓘ</button>
+                      <span className={`w-3.5 shrink-0 text-center font-mono text-xs tabular-nums ${checked ? 'text-success font-semibold' : 'text-muted-foreground'}`}>
+                        {checked ? '1' : '0'}
+                      </span>
+                    </label>
+                  </React.Fragment>
+                );
+              })}
+            </div>
+
+            {/* Tooltip */}
+            {hoveredTip && (
+              <div role="tooltip" dir="rtl" className="tooltip absolute inset-x-0 top-full mt-1 z-20">
+                {hoveredTip}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Progress bar */}
-        <div className="flex gap-0.5 h-1.5">
-          {[0,1,2,3,4].map(i => (
-            <div key={i} className={`flex-1 rounded-sm transition-colors ${
-              i < computed.metaStgScore
-                ? computed.metaStgScore >= 4 ? 'bg-emerald-400' :
-                  computed.metaStgScore >= 2 ? 'bg-amber-400' : 'bg-red-400/80'
-                : 'bg-secondary/40'
-            }`} />
-          ))}
-        </div>
-
-        <div className="space-y-0.5">
-          {STG_ITEMS.map((item, idx) => {
-            const checked = !!form[item.key];
-            const isNamingOnly = item.key === 'stgNaming' && form.stgNaming && !form.stgWhen && !form.stgHow && !form.stgWhy && !form.stgWhenNot;
-            return (
-              <React.Fragment key={item.key}>
-                {idx === 1 && (
-                  <div className="flex items-center gap-2 my-0.5">
-                    <div className="flex-1 border-t border-border/40" />
-                    <span className="text-[9px] text-muted-foreground/40">הסבר</span>
-                    <div className="flex-1 border-t border-border/40" />
-                  </div>
-                )}
-                <label
-                  className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors ${
-                    checked ? 'bg-primary/8 border border-primary/20' : 'border border-transparent hover:bg-secondary/30'
+        {/* Basic Classification */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <label className={TDS_SUBLABEL}>סיווג בסיסי</label>
+            <span className="kbd"><bdi>c/o/m</bdi></span>
+          </div>
+          <div dir="ltr" role="group" aria-label="סיווג בסיסי" className="grid grid-cols-3 gap-1.5">
+            {(['COG', 'OVERLAP', 'META'] as const).map(cls => {
+              const active = form.basicClass === cls;
+              return (
+                <button key={cls} type="button"
+                  aria-pressed={active}
+                  onClick={() => onChange(f => ({ ...f, basicClass: cls }))}
+                  className={`inline-flex h-10 items-center justify-center gap-2 rounded-[.625rem] font-mono text-xs font-semibold transition-colors ${
+                    active
+                      ? `${basicClassTone(cls)} ${TONE_TEXT} bg-[color:color-mix(in_oklab,var(--tone)_12%,var(--card))] shadow-[inset_0_0_0_1.5px_var(--tone)]`
+                      : 'bg-card text-secondary-foreground shadow-[inset_0_0_0_1px_var(--input)] hover:bg-secondary/60 hover:text-foreground'
                   }`}
                 >
-                  <input type="checkbox" checked={checked}
-                    onChange={e => onChange(f => ({ ...f, [item.key]: e.target.checked }))}
-                    className="w-3.5 h-3.5 accent-primary shrink-0"
-                  />
-                  <span className={`text-xs flex-1 ${checked ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
-                    {item.label}
-                    {isNamingOnly && (
-                      <span className="text-[9px] text-amber-400/70 mr-1"> ← בלעדי = OVERLAP</span>
-                    )}
-                  </span>
-                  <span className={`text-[10px] font-bold ${checked ? 'text-primary' : 'text-muted-foreground/30'}`}>
-                    {checked ? '1' : '0'}
-                  </span>
-                  <button type="button"
-                    onMouseEnter={() => setHoveredTip(item.tip)}
-                    onMouseLeave={() => setHoveredTip(null)}
-                    onClick={e => e.preventDefault()}
-                    className="shrink-0 text-[11px] text-muted-foreground/30 hover:text-muted-foreground/70 transition-colors leading-none"
-                  >ⓘ</button>
-                </label>
-              </React.Fragment>
-            );
-          })}
+                  {cls}
+                  <kbd className="kbd" aria-hidden="true">{cls[0]}</kbd>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Tooltip */}
-        {hoveredTip && (
-          <div className="rounded-lg bg-slate-900/90 border border-slate-700/60 px-3 py-2 text-[11px] text-slate-300 leading-relaxed" dir="rtl">
-            {hoveredTip}
+        {/* Computed result */}
+        {(form.basicClass || computed.missedMeta !== 'none') && (
+          <div className="rounded-xl border border-border bg-card p-3 space-y-2 text-[13px]" dir="rtl">
+            {form.basicClass && (
+              <div className="flex items-center gap-2">
+                <span className="w-28 shrink-0 text-muted-foreground">סיווג:</span>
+                <span className={`badge font-mono ${basicClassTone(form.basicClass)}`}><bdi>{form.basicClass}</bdi></span>
+              </div>
+            )}
+            {computed.missedMeta !== 'none' && (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="w-28 shrink-0 font-mono text-xs text-muted-foreground"><bdi>MISSED_META:</bdi></span>
+                  <span className={`badge ${computed.missedMeta === 'full' ? 'tone-danger' : 'tone-warning'}`}>{computed.missedMeta === 'full' ? 'מלא' : 'חלקי'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-28 shrink-0 font-mono text-xs text-muted-foreground"><bdi>MO_SCORE:</bdi></span>
+                  <span className={`tone-mo ${TONE_TEXT} font-mono font-semibold tabular-nums`}>{computed.moScore}</span>
+                </div>
+                {computed.moComponents.length > 0 && (
+                  <div className="flex items-baseline gap-2">
+                    <span className="w-28 shrink-0 text-muted-foreground">רכיבים מוחמצים:</span>
+                    <div className="flex flex-wrap gap-1">
+                      {computed.moComponents.map(c => (
+                        <span key={c} className="badge tone-mo">{c}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
-      </div>
 
-      {/* Basic Classification */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">סיווג בסיסי</label>
-          <span className="text-[9px] text-muted-foreground/40 font-mono">c/o/m</span>
+        {/* TDS Reasoning */}
+        <div className="space-y-1.5">
+          <label htmlFor={reasoningId} className={`${TDS_SUBLABEL} block`}>נימוק TDS</label>
+          <textarea
+            id={reasoningId}
+            value={form.tdReasoning}
+            onChange={e => onChange(f => ({ ...f, tdReasoning: e.target.value }))}
+            rows={2}
+            dir="rtl"
+            placeholder="למה בחרת בסיווג זה? מה הצדיק (או לא הצדיק) META מלא?"
+            className="field text-[13px] resize-none"
+          />
         </div>
-        <div className="grid grid-cols-3 gap-1">
-          {(['COG', 'OVERLAP', 'META'] as const).map(cls => {
-            const activeStyle = {
-              COG:     'border-blue-500/50 bg-blue-500/10 text-blue-400',
-              OVERLAP: 'border-amber-500/50 bg-amber-500/10 text-amber-400',
-              META:    'border-emerald-500/50 bg-emerald-500/10 text-emerald-400',
-            }[cls];
-            return (
-              <button key={cls} type="button"
-                onClick={() => onChange(f => ({ ...f, basicClass: cls }))}
-                className={`py-1.5 rounded-md text-xs font-bold border transition-all ${
-                  form.basicClass === cls
-                    ? activeStyle
-                    : 'border-border text-muted-foreground hover:border-primary/30 hover:text-foreground'
-                }`}
-              >
-                {cls}
-              </button>
-            );
-          })}
-        </div>
+
       </div>
-
-      {/* Computed result */}
-      {(form.basicClass || computed.missedMeta !== 'none') && (
-        <div className="rounded-lg bg-secondary/30 border border-border/50 p-2.5 space-y-1.5 text-xs" dir="rtl">
-          {form.basicClass && (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">סיווג:</span>
-              <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
-                form.basicClass === 'META'    ? 'bg-emerald-500/15 text-emerald-400' :
-                form.basicClass === 'OVERLAP' ? 'bg-amber-500/15 text-amber-400' :
-                                                'bg-blue-500/15 text-blue-400'
-              }`}>{form.basicClass}</span>
-            </div>
-          )}
-          {computed.missedMeta !== 'none' && (
-            <>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">MISSED_META:</span>
-                <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
-                  computed.missedMeta === 'full' ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-400'
-                }`}>{computed.missedMeta === 'full' ? 'מלא' : 'חלקי'}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">MO_SCORE:</span>
-                <span className="font-bold text-orange-400">{computed.moScore}</span>
-              </div>
-              {computed.moComponents.length > 0 && (
-                <div className="pt-1 border-t border-border/40 space-y-0.5">
-                  <p className="text-muted-foreground text-[10px]">רכיבים מוחמצים:</p>
-                  <p className="text-foreground/70 text-[11px] leading-relaxed">
-                    {computed.moComponents.join('، ')}
-                  </p>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* TDS Reasoning */}
-      <div className="space-y-1.5">
-        <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">נימוק TDS</label>
-        <textarea
-          value={form.tdReasoning}
-          onChange={e => onChange(f => ({ ...f, tdReasoning: e.target.value }))}
-          rows={2}
-          dir="rtl"
-          placeholder="למה בחרת בסיווג זה? מה הצדיק (או לא הצדיק) META מלא?"
-          className="w-full bg-background border border-border rounded-md px-2 py-1.5 text-xs focus:outline-none focus:border-primary resize-none"
-        />
-      </div>
-
     </div>
   );
 }
@@ -1477,18 +1516,25 @@ function TaggingModeInner() {
     <div className="p-6 max-w-full h-[calc(100vh-2rem)] flex gap-0 overflow-hidden animate-in fade-in duration-300">
 
       {/* Code tooltip — fixed position to escape overflow containers */}
-      {tooltip && tooltip.description && (
-        <div
-          className="fixed z-[999] pointer-events-none"
-          style={{ left: tooltip.x, top: tooltip.y, transform: "translate(-50%, -100%)" }}
-        >
-          <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-xl px-4 py-3 shadow-2xl w-64 text-sm" dir="rtl">
-            <p className="font-bold text-slate-100 mb-1 text-left" dir="ltr">{tooltip.id}</p>
-            <p className="text-slate-300 leading-relaxed">{tooltip.description}</p>
+      {tooltip && tooltip.description && (() => {
+        // Display-only clamp so a 16rem tooltip never leaves the viewport; the arrow keeps pointing at the chip.
+        const left = Math.min(Math.max(tooltip.x, 136), window.innerWidth - 136);
+        return (
+          <div
+            className="fixed z-[999] pointer-events-none"
+            style={{ left, top: tooltip.y, transform: "translate(-50%, -100%)" }}
+          >
+            <div role="tooltip" className="tooltip w-64">
+              <p className="font-mono text-xs font-semibold text-popover-foreground mb-1" dir="ltr">{tooltip.id}</p>
+              <p dir="auto" className="text-secondary-foreground leading-relaxed">{tooltip.description}</p>
+            </div>
+            <div
+              className="tooltip-arrow absolute -bottom-1.5 -translate-x-1/2"
+              style={{ left: `calc(50% + ${tooltip.x - left}px)` }}
+            />
           </div>
-          <div className="absolute top-full left-1/2 -translate-x-1/2 border-[6px] border-transparent border-t-slate-900/95" />
-        </div>
-      )}
+        );
+      })()}
 
       {/* Full-screen drag overlay — prevents mouse events from being captured by video/iframe */}
       {activeDrag && (
@@ -1500,67 +1546,80 @@ function TaggingModeInner() {
 
       {/* ── Video Browser Modal ─────────────────────────────────────────────── */}
       {showVideoBrowser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowVideoBrowser(false)} />
-          <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-2xl mx-4 z-10 flex flex-col max-h-[80vh]">
-            <div className="flex items-center justify-between p-5 border-b border-border">
-              <h2 className="font-semibold text-lg flex items-center gap-2">
+        <div className="modal-root">
+          <div className="modal-backdrop" onClick={() => setShowVideoBrowser(false)} />
+          <div
+            role="dialog" aria-modal="true" aria-labelledby="library-title"
+            className="modal-panel modal-panel-lg flex flex-col max-h-[80vh] overflow-hidden"
+          >
+            <div className="modal-header">
+              <h2 id="library-title" className="modal-title">
                 <Library size={18} className="text-primary" /> Browse Video Library
               </h2>
-              <button onClick={() => setShowVideoBrowser(false)} className="text-muted-foreground hover:text-foreground transition-colors">
-                <X size={20} />
+              <button onClick={() => setShowVideoBrowser(false)} aria-label="Close" className="icon-btn">
+                <X size={18} />
               </button>
             </div>
-            <div className="p-4 border-b border-border space-y-3">
+            <div className="px-5 py-4 border-b border-border space-y-3">
               <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
                   type="text" value={librarySearch}
                   onChange={(e) => setLibrarySearch(e.target.value)}
                   placeholder="Search videos..."
-                  className="w-full bg-background border border-border rounded-md pl-8 pr-3 py-2 text-sm focus:outline-none focus:border-primary"
+                  aria-label="Search videos"
+                  className="field field-sm ps-8"
                 />
               </div>
-              <div className="flex rounded-md border border-border overflow-hidden w-fit text-xs font-medium">
+              <div className="segmented">
                 <button onClick={() => setLibraryViewMode("recent")}
-                  className={`px-3 py-1.5 transition-colors ${libraryViewMode === "recent" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary/40"}`}>
+                  aria-pressed={libraryViewMode === "recent"}
+                  className="segmented-item">
                   Recent
                 </button>
                 <button onClick={() => setLibraryViewMode("folders")}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${libraryViewMode === "folders" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary/40"}`}>
+                  aria-pressed={libraryViewMode === "folders"}
+                  className="segmented-item">
                   <FolderOpen size={12} /> By Folder
                 </button>
               </div>
             </div>
-            <div className="overflow-y-auto flex-1 p-2">
+            <div className="overflow-y-auto flex-1 min-h-0 p-2">
               {loadingLibrary ? (
-                <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">Loading...</div>
+                <div role="status" aria-busy="true" className="space-y-2 p-1">
+                  <p className="px-1 text-xs text-muted-foreground">Loading...</p>
+                  {[0, 1, 2, 3].map(i => (
+                    <div key={i} className="h-14 rounded-lg shimmer" />
+                  ))}
+                </div>
               ) : filteredLibrary.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
-                  <Video size={36} className="opacity-30" />
-                  <p className="text-sm">{librarySearch ? "No videos match your search." : "No videos in library yet."}</p>
+                <div className="empty-state empty-state-compact py-14">
+                  <div className="empty-state-icon">
+                    <Video size={22} />
+                  </div>
+                  <p className="text-sm text-muted-foreground">{librarySearch ? "No videos match your search." : "No videos in library yet."}</p>
                 </div>
               ) : libraryViewMode === "folders" ? (
                 groupedLibrary.map(({ folder, videos }) => (
                   <div key={folder || "__uncategorized__"} className="mb-3">
-                    <p className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                      <FolderOpen size={12} /> {folder || "Uncategorized"}
+                    <p className="sticky top-0 z-10 bg-card/95 section-label flex items-center gap-1.5 px-2 py-1.5">
+                      <FolderOpen size={12} /> <bdi>{folder || "Uncategorized"}</bdi>
                     </p>
                     {videos.map(video => (
                       <button key={video.id} onClick={() => handleSelectLibraryVideo(video)}
-                        className="w-full flex items-center gap-4 p-3 rounded-lg hover:bg-secondary/40 transition-colors text-left"
+                        className="group w-full flex items-center gap-4 p-3 rounded-lg hover:bg-secondary transition-colors text-start"
                       >
-                        <div className="w-10 h-10 bg-primary/10 rounded-md flex items-center justify-center shrink-0">
-                          <Video size={18} className="text-primary" />
+                        <div className="icon-tile icon-tile-md">
+                          <Video size={18} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm truncate">{video.title || "Untitled Video"}</p>
-                          <p className="text-xs text-muted-foreground">
+                          <p dir="auto" className="font-medium text-sm truncate">{video.title || "Untitled Video"}</p>
+                          <p className="text-xs text-muted-foreground tabular-nums">
                             {video.duration_seconds ? `${Math.floor(video.duration_seconds / 60)}:${String(video.duration_seconds % 60).padStart(2, "0")}` : "—"}
                             {video.created_at ? ` · ${new Date(video.created_at).toLocaleDateString()}` : ""}
                           </p>
                         </div>
-                        <span className="text-xs text-primary font-medium shrink-0">Load</span>
+                        <span className="badge badge-pill tone-primary shrink-0 group-hover:border-primary/50">Load</span>
                       </button>
                     ))}
                   </div>
@@ -1568,20 +1627,20 @@ function TaggingModeInner() {
               ) : (
                 filteredLibrary.map(video => (
                   <button key={video.id} onClick={() => handleSelectLibraryVideo(video)}
-                    className="w-full flex items-center gap-4 p-3 rounded-lg hover:bg-secondary/40 transition-colors text-left"
+                    className="group w-full flex items-center gap-4 p-3 rounded-lg hover:bg-secondary transition-colors text-start"
                   >
-                    <div className="w-10 h-10 bg-primary/10 rounded-md flex items-center justify-center shrink-0">
-                      <Video size={18} className="text-primary" />
+                    <div className="icon-tile icon-tile-md">
+                      <Video size={18} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{video.title || "Untitled Video"}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p dir="auto" className="font-medium text-sm truncate">{video.title || "Untitled Video"}</p>
+                      <p className="text-xs text-muted-foreground tabular-nums">
                         {video.duration_seconds ? `${Math.floor(video.duration_seconds / 60)}:${String(video.duration_seconds % 60).padStart(2, "0")}` : "—"}
                         {video.created_at ? ` · ${new Date(video.created_at).toLocaleDateString()}` : ""}
                         {video.folder_path ? ` · ${video.folder_path}` : ""}
                       </p>
                     </div>
-                    <span className="text-xs text-primary font-medium shrink-0">Load</span>
+                    <span className="badge badge-pill tone-primary shrink-0 group-hover:border-primary/50">Load</span>
                   </button>
                 ))
               )}
@@ -1593,8 +1652,8 @@ function TaggingModeInner() {
       {/* ── Loading overlay ─────────────────────────────────────────────────── */}
       {isLoadingSession && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-          <div className="bg-card border border-border rounded-xl px-8 py-6 shadow-xl text-center space-y-2">
-            <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+          <div role="status" className="card shadow-lg px-8 py-6 text-center space-y-2">
+            <Loader2 className="size-8 animate-spin text-primary mx-auto" aria-hidden="true" />
             <p className="text-sm font-medium">Loading session…</p>
           </div>
         </div>
@@ -1606,244 +1665,272 @@ function TaggingModeInner() {
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden mr-1.5">
 
         {/* Header */}
-        <header className="flex items-center justify-between gap-3 shrink-0">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Tagging Workspace</h1>
+        {/* One-row top bar (wraps on narrow widths): title · session · export · clear */}
+        <header className="shrink-0 flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <h1 className="text-xl font-semibold tracking-tight">Tagging Workspace</h1>
             {resumedSessionId && (
-              <span className="inline-flex items-center gap-1 text-xs text-primary mt-0.5">
-                <RotateCcw size={11} /> Resumed session
+              <span className="badge tone-primary">
+                <RotateCcw size={11} aria-hidden="true" /> Resumed session
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+
+          <div className="ms-auto flex flex-wrap items-center gap-2 min-w-0">
+            {/* Session */}
             <input
               type="text" value={sessionName}
               onChange={(e) => setSessionName(e.target.value)}
               placeholder="Session name..."
-              className="bg-background border border-border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:border-primary w-36"
+              aria-label="Session name"
+              dir="auto"
+              className="field h-9 w-52 min-w-0"
             />
             <input ref={sessionImportRef} type="file" accept=".json" className="hidden" onChange={handleImportSession} />
             <button onClick={() => sessionImportRef.current?.click()} title="Load session from JSON"
-              className="flex items-center gap-1.5 bg-secondary text-secondary-foreground px-3 py-1.5 rounded-md hover:bg-secondary/80 transition-colors text-sm">
-              <Upload size={13} /> Load
+              aria-label="Load session from JSON"
+              className="btn btn-secondary">
+              <Upload size={14} aria-hidden="true" /> Load
             </button>
             <button onClick={() => handleSaveSessionToSupabase()} disabled={isSavingSession || markers.length === 0}
               title="Save session to library"
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                sessionSaved ? "bg-green-600 text-white" : "bg-primary text-primary-foreground hover:bg-primary/90"
-              }`}>
-              <Save size={13} />
-              {isSavingSession ? "Saving..." : sessionSaved ? "Saved!" : "Save"}
+              className={`btn min-w-[5.75rem] ${sessionSaved ? "btn-success" : "btn-primary"}`}>
+              {isSavingSession
+                ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                : <Save size={14} aria-hidden="true" />}
+              <span aria-live="polite">{isSavingSession ? "Saving..." : sessionSaved ? "Saved!" : "Save"}</span>
             </button>
-            <button onClick={handleExportJson} disabled={markers.length === 0} title="Export as JSON"
-              className="bg-secondary text-secondary-foreground px-2.5 py-1.5 rounded-md hover:bg-secondary/80 transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed">
-              <Download size={13} />
-            </button>
-            <button onClick={handleExportExcel} disabled={markers.length === 0} title="Export as Excel"
-              className="bg-secondary text-secondary-foreground px-2.5 py-1.5 rounded-md hover:bg-secondary/80 transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed">
-              <FileSpreadsheet size={13} />
-            </button>
-            <button
-              onClick={handleExportTranscript}
-              disabled={aiStatus === "processing"}
-              title="ייצא תמלול עם תיאורים שמיעתיים (.txt)"
-              className="flex items-center gap-1.5 bg-secondary text-secondary-foreground px-3 py-1.5 rounded-md hover:bg-secondary/80 transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Mic size={13} />
-              תמלול שמיעתי
-            </button>
+
+            <span aria-hidden="true" className="toolbar-sep h-6 mx-1" />
+
+            {/* Export — one segmented group */}
+            <div role="group" aria-label="Export" className="segmented">
+              <button onClick={handleExportJson} disabled={markers.length === 0} title="Export as JSON"
+                aria-label="Export as JSON"
+                className="segmented-item px-2.5">
+                <Download size={13} aria-hidden="true" /> JSON
+              </button>
+              <button onClick={handleExportExcel} disabled={markers.length === 0} title="Export as Excel"
+                aria-label="Export as Excel"
+                className="segmented-item px-2.5">
+                <FileSpreadsheet size={13} aria-hidden="true" /> Excel
+              </button>
+              <button
+                onClick={handleExportTranscript}
+                disabled={aiStatus === "processing"}
+                title="ייצא תמלול עם תיאורים שמיעתיים (.txt)"
+                className="segmented-item px-2.5"
+              >
+                <Mic size={13} aria-hidden="true" />
+                <span dir="rtl">תמלול שמיעתי</span>
+              </button>
+            </div>
+
+            {/* Clear — ghost icon button, red on hover */}
             <button onClick={handleClearSession} disabled={markers.length === 0} title="Clear all tags"
-              className="bg-destructive/10 text-destructive border border-destructive/20 px-2.5 py-1.5 rounded-md hover:bg-destructive/20 transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed">
-              <Trash2 size={13} />
+              aria-label="Clear all tags"
+              className="icon-btn icon-btn-danger size-9">
+              <Trash2 size={15} aria-hidden="true" />
             </button>
           </div>
         </header>
 
-        {/* Video Card — vertically resizable */}
+        {/* Video stage — always dark (cinema frame), vertically resizable.
+            .stage has no transform/filter, so the fixed tooltip and drag overlay are unaffected. */}
         <div
           ref={videoCardRef}
-          className="bg-card border border-border rounded-xl overflow-hidden shadow-sm shrink-0 mt-3 flex flex-col"
+          className="stage surface-dark shrink-0 mt-3 flex flex-col"
           style={videoHeight ? { height: videoHeight } : undefined}
         >
           {/* URL input row */}
-          <div className="flex gap-2 p-3 border-b border-border shrink-0">
+          <div className="flex flex-wrap gap-2 p-3 shrink-0">
             <input
               type="text" value={videoInputUrl}
               onChange={(e) => setVideoInputUrl(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleLoadUrl()}
-              className="flex-1 bg-background border border-border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:border-primary"
+              className="field h-9 flex-1 basis-56 min-w-0"
               placeholder="Paste video URL or choose a file..."
+              aria-label="Video URL"
             />
             <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={handleFileSelect} />
             <input ref={captionInputRef} type="file" accept=".vtt,.srt" className="hidden" onChange={handleCaptionFileSelect} />
             <button onClick={() => fileInputRef.current?.click()} title="Choose local file"
-              className="bg-secondary text-secondary-foreground px-2.5 py-1.5 rounded-md hover:bg-secondary/80 transition-colors">
-              <FolderOpen size={15} />
+              aria-label="Choose local file"
+              className="btn btn-secondary btn-icon">
+              <FolderOpen size={15} aria-hidden="true" />
             </button>
             <button
               onClick={() => captionInputRef.current?.click()}
               title={captions.length > 0 ? `Captions loaded (${captions.length} cues) — click to replace` : "Load captions (.vtt or .srt)"}
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md hover:bg-secondary/80 transition-colors text-sm border ${
-                captions.length > 0
-                  ? "bg-primary/10 border-primary/30 text-primary"
-                  : "bg-secondary text-secondary-foreground border-transparent"
-              }`}
+              aria-label={captions.length > 0 ? `Captions loaded (${captions.length} cues) — click to replace` : "Load captions (.vtt or .srt)"}
+              className={`btn ${captions.length > 0 ? "btn-soft px-3" : "btn-secondary btn-icon"}`}
             >
-              <Captions size={15} />
-              {captions.length > 0 && <span className="text-xs font-medium">{captions.length}</span>}
+              <Captions size={15} aria-hidden="true" />
+              {captions.length > 0 && <span className="font-mono text-xs font-medium tabular-nums">{captions.length}</span>}
             </button>
             <button onClick={handleOpenVideoBrowser} title="Browse video library"
-              className="bg-secondary text-secondary-foreground px-2.5 py-1.5 rounded-md hover:bg-secondary/80 transition-colors flex items-center gap-1.5 text-sm">
-              <Library size={15} /> Library
+              className="btn btn-secondary">
+              <Library size={15} aria-hidden="true" /> Library
             </button>
             <button onClick={handleLoadUrl} disabled={!videoInputUrl.trim()}
-              className="bg-primary text-primary-foreground px-4 py-1.5 rounded-md hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm font-medium">
+              aria-label="Load video URL"
+              className="btn btn-primary px-4">
               Load
             </button>
           </div>
 
-          {/* Player — fills remaining height; VideoPlayer uses h-full to anchor controls correctly */}
-          <div className="flex-1 min-h-[260px]">
+          {/* Player — takes the remaining stage height; the black player frame sits inset in the stage */}
+          <div className="flex-1 min-h-0 px-3">
             {loadedUrl ? (
               <VideoPlayer key={loadedUrl} url={loadedUrl} markers={markers} onTimeUpdate={(t) => setCurrentTime(t)} captions={captions} seekRequest={seekRequest} />
             ) : (
-              <div className="flex flex-col items-center justify-center h-full min-h-[220px] text-muted-foreground text-sm gap-3 p-6 text-center bg-secondary/10">
-                <Video size={36} className="opacity-30 text-primary" />
+              <div dir="rtl" lang="he" className="empty-state empty-state-compact h-full min-h-[260px] rounded-xl bg-accent">
+                <div className="icon-tile icon-tile-lg">
+                  <Video size={22} aria-hidden="true" />
+                </div>
                 <div className="space-y-1 max-w-sm">
-                  <p className="font-semibold text-foreground text-base">טרם נבחר וידאו לתיוג</p>
-                  <p className="text-xs text-muted-foreground">בחר סרטון מספריית הוידאו של המערכת, הדבק קישור חיצוני, או העלה קובץ וידאו מקומי.</p>
+                  <p className="empty-state-title text-base">טרם נבחר וידאו לתיוג</p>
+                  <p className="empty-state-text">בחר סרטון מספריית הוידאו של המערכת, הדבק קישור חיצוני, או העלה קובץ וידאו מקומי.</p>
                 </div>
                 <button
                   onClick={handleOpenVideoBrowser}
-                  className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all shadow-sm mt-1"
+                  className="btn btn-soft mt-1"
                 >
-                  <Library size={16} /> עיון בספריית הוידאו (Browse Library)
+                  <Library size={16} aria-hidden="true" /> עיון בספריית הוידאו (Browse Library)
                 </button>
               </div>
             )}
           </div>
 
-          {/* Status bar */}
-          <div className="flex items-center gap-4 px-4 py-1.5 border-t border-border bg-secondary/10 text-xs text-muted-foreground shrink-0">
-            {loadedVideoId && <Link href={`/videos/${loadedVideoId}/environment`} className="text-primary hover:underline">סביבת הלמידה · Indirect SRL</Link>}
-            <span className="flex items-center gap-1.5">
-              <Tag size={11} className="text-primary" />
+          {/* Status line — neutral pills, then the learning-environment link at the end */}
+          <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground tabular-nums shrink-0">
+            <span className="badge tone-neutral">
+              <Tag size={11} aria-hidden="true" />
               <span className="font-medium text-foreground">{markers.length}</span> tag{markers.length !== 1 ? "s" : ""}
             </span>
             {(startTime !== "" || endTime !== "") && (
-              <span className="flex items-center gap-1.5 text-primary font-mono">
-                <Clock size={11} />
+              <span className="badge tone-neutral font-mono">
+                <Clock size={11} aria-hidden="true" />
                 {formatTime(startTime === "" ? 0 : startTime as number)} – {formatTime(endTime === "" ? 0 : endTime as number)}
               </span>
             )}
             {loadedVideoId && (
-              <span className="ml-auto flex items-center gap-1 text-primary">
-                <Library size={11} /> From library
+              <span className="badge tone-neutral">
+                <Library size={11} aria-hidden="true" /> From library
               </span>
             )}
+            {loadedVideoId && <Link href={`/videos/${loadedVideoId}/environment`} className="ms-auto inline-flex items-center gap-1 rounded font-medium text-primary hover:underline underline-offset-2">סביבת הלמידה · Indirect SRL<ArrowUpRight size={12} aria-hidden="true" /></Link>}
           </div>
         </div>
 
-        {/* Vertical resize handle — video vs tags */}
+        {/* Vertical resize handle — video vs tags (same 20px hit area; slim grip) */}
         <div
-          className="h-5 shrink-0 flex items-center justify-center cursor-row-resize group"
+          className="h-5 shrink-0 flex items-center justify-center cursor-row-resize group select-none touch-none"
           onMouseDown={startVDrag}
           title="Drag to resize"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Drag to resize"
         >
-          <div className="h-5 w-16 bg-secondary border border-border rounded-full flex flex-col items-center justify-center gap-1 group-hover:bg-primary/20 group-hover:border-primary transition-all shadow-sm">
-            <span className="h-px w-8 bg-muted-foreground rounded-full group-hover:bg-primary transition-colors" />
-            <span className="h-px w-8 bg-muted-foreground rounded-full group-hover:bg-primary transition-colors" />
-          </div>
+          <span
+            aria-hidden="true"
+            className={`h-1 w-11 rounded-full transition-colors ${activeDrag === "v" ? "bg-primary" : "bg-input group-hover:bg-primary"}`}
+          />
         </div>
 
-        {/* Session Tag List */}
-        <div className="bg-card border border-border rounded-xl flex-1 min-h-0 flex flex-col overflow-hidden shadow-sm mb-3">
-          <div className="px-4 py-2.5 border-b border-border flex items-center justify-between shrink-0">
-            <h3 className="font-semibold text-sm flex items-center gap-2">
-              <Tag size={14} className="text-primary" /> Session Tags
+        {/* Session Tag List — a timeline: time column + content column per tag */}
+        <div className="card flex-1 min-h-0 flex flex-col overflow-hidden mb-3">
+          <div className="flex items-center gap-2 px-[1.125rem] py-3 border-b border-border shrink-0">
+            <h3 className="card-title flex items-center gap-2">
+              <Tag size={14} className="text-primary" aria-hidden="true" /> Session Tags
             </h3>
             {markers.length > 0 && (
-              <span className="text-xs font-medium bg-primary/10 text-primary px-2 py-0.5 rounded-full">{markers.length}</span>
+              <span className="count-pill">{markers.length}</span>
             )}
           </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+          <div className="flex-1 overflow-y-auto">
             {markers.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full py-6 text-muted-foreground gap-2">
-                <Tag size={22} className="opacity-20" />
-                <p className="text-xs">No tags yet — pick a code and press Add Tag.</p>
+              <div className="empty-state empty-state-compact h-full py-6">
+                <div className="empty-state-icon size-10">
+                  <Tag size={18} aria-hidden="true" />
+                </div>
+                <p className="empty-state-text">No tags yet — pick a code and press Add Tag.</p>
               </div>
             ) : (
               markers.map(m => {
                 const isEditing = editingMarkerId === m.id;
                 const strengthLabel =
                   m.confidence === undefined ? null :
-                  m.confidence >= 0.8 ? { text: "חזק",   cls: "bg-green-500/15 text-green-400 border-green-500/25" } :
-                  m.confidence >= 0.5 ? { text: "בינוני", cls: "bg-yellow-500/15 text-yellow-400 border-yellow-500/25" } :
-                  { text: "חלש", cls: "bg-red-500/15 text-red-400 border-red-500/25" };
+                  m.confidence >= 0.8 ? { text: "חזק",   cls: strengthTone(m.confidence) } :
+                  m.confidence >= 0.5 ? { text: "בינוני", cls: strengthTone(m.confidence) } :
+                  { text: "חלש", cls: strengthTone(m.confidence) };
                 return (
-                  <div key={m.id} className={`bg-secondary/20 border rounded-lg overflow-hidden transition-colors ${isEditing ? "border-primary/40" : "border-border/60 hover:border-primary/25"}`}>
-                    {/* Header row — click to seek */}
+                  <div
+                    key={m.id}
+                    className={`timeline-row gap-y-0 last:border-b-0 ${isEditing ? "bg-primary/5 shadow-[inset_3px_0_0_var(--primary)]" : ""}`}
+                  >
+                    {/* Header (time column + codes line) — click to seek. `contents` lets its two
+                        children sit in the row grid while the click, title and cursor stay here. */}
                     <div
-                      className="flex items-start gap-2 p-2.5 cursor-pointer hover:bg-secondary/30 transition-colors"
+                      className="contents cursor-pointer"
                       onClick={() => { if (!isEditing) seekToTime(m.startTime); }}
                       title={isEditing ? undefined : `Seek to ${formatTime(m.startTime)}`}
                     >
-                      <div className="flex flex-wrap gap-1 min-w-0 flex-1 pt-0.5">
+                      <div className="col-start-1 row-start-1 row-span-3 flex flex-col gap-0.5 pt-px">
+                        <span className="timeline-time">{formatTime(m.startTime)}</span>
+                        <span className="timeline-time-end">→ {formatTime(m.endTime || m.startTime)}</span>
+                      </div>
+                      <div className="col-start-2 row-start-1 flex flex-wrap items-center gap-1.5 min-w-0 min-h-6">
                         {(m.labels ?? [m.label]).map((lbl, i) => (
                           <span
                             key={`${lbl}-${i}`}
-                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold border"
-                            style={{
-                              borderColor: ((m.colors ?? [m.color])[i] || m.color) + "50",
-                              backgroundColor: ((m.colors ?? [m.color])[i] || m.color) + "18",
-                              color: (m.colors ?? [m.color])[i] || m.color,
-                            }}
+                            className="code-chip font-mono font-medium"
+                            style={{ "--code": (m.colors ?? [m.color])[i] || m.color } as React.CSSProperties}
                           >
-                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: (m.colors ?? [m.color])[i] || m.color }} />
+                            <span className="code-dot" aria-hidden="true" />
                             {lbl}
                           </span>
                         ))}
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
                         {strengthLabel && (
-                          <span className={`text-xs px-1.5 py-0.5 rounded border ${strengthLabel.cls}`}>{strengthLabel.text}</span>
+                          <span className={`badge ${strengthLabel.cls}`}>{strengthLabel.text}</span>
                         )}
-                        <span className="text-xs font-mono text-muted-foreground bg-background px-1.5 py-0.5 rounded">
-                          {formatTime(m.startTime)}–{formatTime(m.endTime || m.startTime)}
-                        </span>
-                        {/* Play hint */}
-                        {!isEditing && (
-                          <Play size={11} className="text-muted-foreground/50 shrink-0" />
-                        )}
-                        {/* Edit button */}
-                        <button
-                          onClick={e => { e.stopPropagation(); if (isEditing) { setEditingMarkerId(null); setEditTdsMeta(null); } else { handleEditStart(m); } }}
-                          title={isEditing ? "Cancel edit" : "Edit tag"}
-                          className={`shrink-0 transition-colors ${isEditing ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
-                        >
-                          {isEditing ? <X size={13} /> : <Pencil size={11} />}
-                        </button>
-                        {/* Delete button */}
-                        <button
-                          onClick={e => { e.stopPropagation(); handleRemoveMarker(m.id); }}
-                          title="Delete tag"
-                          className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
-                        >
-                          <Trash2 size={11} />
-                        </button>
+                        <div className="ms-auto flex items-center gap-1 shrink-0">
+                          {/* Play hint */}
+                          {!isEditing && (
+                            <Play size={11} className="me-1 text-muted-foreground shrink-0" aria-hidden="true" />
+                          )}
+                          {/* Edit button */}
+                          <button
+                            onClick={e => { e.stopPropagation(); if (isEditing) { setEditingMarkerId(null); setEditTdsMeta(null); } else { handleEditStart(m); } }}
+                            title={isEditing ? "Cancel edit" : "Edit tag"}
+                            aria-label={isEditing ? "Cancel edit" : "Edit tag"}
+                            className={`icon-btn icon-btn-sm ${isEditing ? "text-primary" : ""}`}
+                          >
+                            {isEditing ? <X size={14} aria-hidden="true" /> : <Pencil size={12} aria-hidden="true" />}
+                          </button>
+                          {/* Delete button */}
+                          <button
+                            onClick={e => { e.stopPropagation(); handleRemoveMarker(m.id); }}
+                            title="Delete tag"
+                            aria-label="Delete tag"
+                            className="icon-btn icon-btn-sm icon-btn-danger"
+                          >
+                            <Trash2 size={12} aria-hidden="true" />
+                          </button>
+                        </div>
                       </div>
                     </div>
 
                     {/* Evidence + reasoning preview when not editing */}
                     {!isEditing && (m.evidence || m.reasoning || m.interpretation) && (
-                      <div className="px-2.5 pb-2 border-t border-border/30 space-y-1 pt-1.5">
-                        {m.evidence && <p className="text-xs text-muted-foreground leading-relaxed" dir="rtl">{m.evidence}</p>}
+                      <div className="col-start-2 mt-2 space-y-1.5">
+                        {m.evidence && <p className="reading text-foreground line-clamp-3" dir="rtl" title={m.evidence}>{m.evidence}</p>}
                         {m.reasoning && (
-                          <p className="text-xs text-foreground/50 italic leading-relaxed border-t border-border/20 pt-1" dir="rtl">
-                            <span className="not-italic font-medium text-muted-foreground/70">נימוק: </span>{m.reasoning}
+                          <p className="reasoning-quote text-[13px] leading-relaxed" dir="rtl">
+                            <span className="font-semibold text-foreground/80">נימוק: </span>{m.reasoning}
                           </p>
                         )}
-                        {m.interpretation && <p className="text-xs text-foreground/60 leading-relaxed line-clamp-1" dir="rtl">{m.interpretation}</p>}
+                        {m.interpretation && <p className="text-xs text-muted-foreground leading-relaxed line-clamp-1" dir="rtl">{m.interpretation}</p>}
                       </div>
                     )}
 
@@ -1852,30 +1939,24 @@ function TaggingModeInner() {
                       const tds = markerTdsMeta.get(m.id);
                       if (!tds) return null;
                       return (
-                        <div className="px-2.5 pb-2 flex flex-wrap gap-1 border-t border-indigo-500/20 pt-1.5">
+                        <div className="col-start-2 mt-2 flex flex-wrap items-center gap-1.5">
                           {tds.basicClass && (
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                              tds.basicClass === 'META'    ? 'bg-emerald-500/15 text-emerald-400' :
-                              tds.basicClass === 'OVERLAP' ? 'bg-amber-500/15 text-amber-400' :
-                                                             'bg-blue-500/15 text-blue-400'
-                            }`}>{tds.basicClass}</span>
+                            <span className={`badge font-mono ${basicClassTone(tds.basicClass)}`}>{tds.basicClass}</span>
                           )}
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-400 font-medium">
+                          <span className="badge tone-primary font-mono">
                             STG {tds.metaStgScore}/5
                           </span>
                           {tds.metaIntro && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">
+                            <span className="badge tone-info font-mono">
                               META_INTRO
                             </span>
                           )}
                           {tds.missedMeta !== 'none' && (
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                              tds.missedMeta === 'full' ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-400'
-                            }`}>MO {tds.missedMeta === 'full' ? 'מלא' : 'חלקי'} ({tds.moScore})</span>
+                            <span className={`badge ${tds.missedMeta === 'full' ? 'tone-danger' : 'tone-warning'}`}>MO <bdi>{tds.missedMeta === 'full' ? 'מלא' : 'חלקי'}</bdi> ({tds.moScore})</span>
                           )}
                           {tds.tdReasoning && (
-                            <p className="w-full text-xs text-foreground/50 italic leading-relaxed border-t border-indigo-500/20 pt-1 mt-0.5" dir="rtl">
-                              <span className="not-italic font-medium text-indigo-400/70">נימוק TDS: </span>{tds.tdReasoning}
+                            <p className="w-full reasoning-quote text-[13px] leading-relaxed mt-0.5" dir="rtl">
+                              <span className="font-semibold text-foreground/80">נימוק TDS: </span>{tds.tdReasoning}
                             </p>
                           )}
                         </div>
@@ -1884,51 +1965,61 @@ function TaggingModeInner() {
 
                     {/* Inline edit form */}
                     {isEditing && editForm && (
-                      <div className="px-2.5 pb-2.5 pt-2 border-t border-primary/20 bg-primary/5 space-y-2">
+                      <div className="col-start-2 mt-3 space-y-3">
                         {/* Time range */}
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1">
-                            <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Start (s)</label>
+                        <div className="flex items-end gap-2">
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <label htmlFor={`edit-start-${m.id}`} className="eyebrow">Start (s)</label>
+                              <span className="font-mono text-2xs text-muted-foreground tabular-nums">{formatTime(editForm.startTime)}</span>
+                            </div>
                             <input
+                              id={`edit-start-${m.id}`}
                               type="number" min={0} step={1}
                               value={editForm.startTime}
                               onChange={e => setEditForm(f => f && { ...f, startTime: e.target.value === "" ? "" : Number(e.target.value) })}
-                              className="w-full bg-background border border-border rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-primary mt-0.5"
+                              className="field field-sm font-mono tabular-nums"
                             />
                           </div>
-                          <span className="text-muted-foreground text-xs mt-4">–</span>
-                          <div className="flex-1">
-                            <label className="text-[10px] text-muted-foreground uppercase tracking-wide">End (s)</label>
+                          <span className="pb-1.5 text-muted-foreground text-xs">–</span>
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <label htmlFor={`edit-end-${m.id}`} className="eyebrow">End (s)</label>
+                              <span className="font-mono text-2xs text-muted-foreground tabular-nums">{formatTime(editForm.endTime)}</span>
+                            </div>
                             <input
+                              id={`edit-end-${m.id}`}
                               type="number" min={0} step={1}
                               value={editForm.endTime}
                               onChange={e => setEditForm(f => f && { ...f, endTime: e.target.value === "" ? "" : Number(e.target.value) })}
-                              className="w-full bg-background border border-border rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-primary mt-0.5"
+                              className="field field-sm font-mono tabular-nums"
                             />
                           </div>
                         </div>
                         {/* Evidence textarea */}
-                        <div>
-                          <label className="text-[10px] text-muted-foreground uppercase tracking-wide">עדות</label>
+                        <div dir="rtl" className="space-y-1">
+                          <label htmlFor={`edit-evidence-${m.id}`} className="section-label block">עדות</label>
                           <textarea
+                            id={`edit-evidence-${m.id}`}
                             value={editForm.evidence}
                             onChange={e => setEditForm(f => f && { ...f, evidence: e.target.value })}
                             rows={2}
                             dir="rtl"
                             placeholder='למשל: "המורה שואלת: בואו נחשוב..."'
-                            className="w-full bg-background border border-border rounded px-2 py-1 text-xs focus:outline-none focus:border-primary resize-none mt-0.5"
+                            className="field text-[13px] resize-none"
                           />
                         </div>
                         {/* Reasoning textarea */}
-                        <div>
-                          <label className="text-[10px] text-muted-foreground uppercase tracking-wide">נימוק</label>
+                        <div dir="rtl" className="space-y-1">
+                          <label htmlFor={`edit-reasoning-${m.id}`} className="section-label block">נימוק</label>
                           <textarea
+                            id={`edit-reasoning-${m.id}`}
                             value={editForm.reasoning}
                             onChange={e => setEditForm(f => f && { ...f, reasoning: e.target.value })}
                             rows={2}
                             dir="rtl"
                             placeholder='למה בחרת קוד זה? אילו קריטריונים הנחו אותך?'
-                            className="w-full bg-background border border-border rounded px-2 py-1 text-xs focus:outline-none focus:border-primary resize-none mt-0.5"
+                            className="field text-[13px] resize-none"
                           />
                         </div>
                         {/* TDS Meta panel in edit form */}
@@ -1936,14 +2027,15 @@ function TaggingModeInner() {
                           <TdsMetaPanel
                             form={editTdsMeta ?? EMPTY_TDS_META}
                             onChange={setEditTdsMeta as React.Dispatch<React.SetStateAction<TdsMetaForm>>}
+                            shortcutsActive={isEditingTdsMeta && rightTab !== 'AI'}
                           />
                         )}
                         {/* Save button */}
                         <button
                           onClick={() => handleEditSave(m.id)}
-                          className="w-full flex items-center justify-center gap-1.5 bg-primary text-primary-foreground text-xs font-semibold py-1.5 rounded hover:bg-primary/90 transition-colors"
+                          className="btn btn-primary btn-sm btn-block h-8"
                         >
-                          <Check size={12} /> Save Changes
+                          <Check size={13} aria-hidden="true" /> Save Changes
                         </button>
                       </div>
                     )}
@@ -1955,59 +2047,58 @@ function TaggingModeInner() {
         </div>
       </div>
 
-      {/* Horizontal resize handle — left vs right column */}
+      {/* Horizontal resize handle — left vs right column (same 20px hit area; slim grip) */}
       <div
-        className="w-5 shrink-0 self-stretch flex items-center justify-center cursor-col-resize group"
+        className="w-5 shrink-0 self-stretch flex items-center justify-center cursor-col-resize group select-none touch-none"
         onMouseDown={startHDrag}
         title="Drag to resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Drag to resize"
       >
-        <div className="w-5 h-16 bg-secondary border border-border rounded-full flex items-center justify-center gap-1 group-hover:bg-primary/20 group-hover:border-primary transition-all shadow-sm">
-          <span className="w-px h-8 bg-muted-foreground rounded-full group-hover:bg-primary transition-colors" />
-          <span className="w-px h-8 bg-muted-foreground rounded-full group-hover:bg-primary transition-colors" />
-        </div>
+        <span
+          aria-hidden="true"
+          className={`w-1 h-11 rounded-full transition-colors ${activeDrag === "h" ? "bg-primary" : "bg-input group-hover:bg-primary"}`}
+        />
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════
           RIGHT COLUMN — Code Selection + Annotation Form
       ══════════════════════════════════════════════════════════════════════ */}
       <div
-        className="shrink-0 bg-card border border-border rounded-xl flex flex-col overflow-hidden shadow-sm my-3"
+        className="card shrink-0 flex flex-col overflow-hidden mb-3"
         style={{ width: rightWidth }}
       >
 
         {/* Sticky top: framework tabs + filter */}
-        <div className="shrink-0 border-b border-border">
-          {/* Framework tabs */}
-          <div className="flex">
+        <div className="shrink-0">
+          {/* Framework tabs — underline tabs in a hairline-bordered tablist */}
+          <div role="tablist" className="flex items-end gap-5 px-4 border-b border-border">
             {(["SCOPE", "NONVERBAL"] as PrismKey[]).map(fw => (
               <button key={fw}
+                role="tab"
+                aria-selected={rightTab === fw}
                 onClick={() => { setRightTab(fw); handlePrismChange(fw); }}
-                className={`flex-1 py-2.5 text-sm font-semibold transition-all border-b-2 ${
-                  rightTab === fw
-                    ? "border-primary text-primary"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
+                className="tab-underline px-0.5 focus-visible:-outline-offset-2"
               >
                 {PRISM_LABELS[fw]}
-                <span className="ml-1 text-xs font-normal opacity-50">{PRISMS[fw].length}</span>
+                <span className="count-pill font-mono" data-active={rightTab === fw}>{PRISMS[fw].length}</span>
               </button>
             ))}
             {/* AI Analysis tab */}
             <button
+              role="tab"
+              aria-selected={rightTab === "AI"}
               onClick={() => setRightTab("AI")}
-              className={`flex-1 py-2.5 text-sm font-semibold transition-all border-b-2 flex items-center justify-center gap-1.5 ${
-                rightTab === "AI"
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
+              className="tab-underline px-0.5 focus-visible:-outline-offset-2"
             >
-              <Bot size={13} />
+              <Bot size={14} aria-hidden="true" />
               AI
               {aiStatus === "processing" && (
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span className="status-dot tone-warning size-2 animate-pulse" aria-hidden="true" />
               )}
               {aiStatus === "completed" && aiEvents.length > 0 && (
-                <span className="text-[10px] bg-primary/15 text-primary rounded-full px-1.5 py-0.5 font-bold leading-none">
+                <span className="count-pill font-mono" data-active="true">
                   {aiEvents.length}
                 </span>
               )}
@@ -2015,18 +2106,20 @@ function TaggingModeInner() {
           </div>
           {/* Filter input — only for code tabs */}
           {rightTab !== "AI" && (
-          <div className="px-3 py-2">
+          <div className="px-4 pt-3 pb-1">
             <div className="relative">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
               <input
                 value={codeSearch}
                 onChange={e => setCodeSearch(e.target.value)}
                 placeholder="Filter codes…"
-                className="w-full bg-background border border-border rounded-md pl-8 pr-7 py-1.5 text-sm focus:outline-none focus:border-primary"
+                aria-label="Filter codes"
+                className="field field-sm ps-8 pe-8"
               />
               {codeSearch && (
-                <button onClick={() => setCodeSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                  <X size={13} />
+                <button onClick={() => setCodeSearch("")} aria-label="Clear filter"
+                  className="icon-btn icon-btn-sm absolute end-1.5 top-1/2 -translate-y-1/2">
+                  <X size={13} aria-hidden="true" />
                 </button>
               )}
             </div>
@@ -2039,14 +2132,14 @@ function TaggingModeInner() {
           <div className="flex-1 overflow-y-auto flex flex-col">
             {/* No video from library */}
             {!loadedVideoId && (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-6 gap-4">
-                <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Bot size={26} className="text-primary opacity-60" />
+              <div className="flex-1 empty-state empty-state-compact px-6">
+                <div className="icon-tile icon-tile-lg tone-primary">
+                  <Bot size={22} aria-hidden="true" />
                 </div>
-                <div>
-                  <p className="font-semibold text-sm">AI Analysis</p>
-                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                    Load a video from the <strong>Library</strong> to enable AI analysis.
+                <div className="space-y-1">
+                  <p className="empty-state-title">AI Analysis</p>
+                  <p className="empty-state-text max-w-[240px]">
+                    Load a video from the <strong className="font-semibold text-foreground">Library</strong> to enable AI analysis.
                   </p>
                 </div>
               </div>
@@ -2054,58 +2147,56 @@ function TaggingModeInner() {
 
             {/* Idle — video loaded, no analysis yet */}
             {loadedVideoId && aiStatus === "idle" && (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-6 gap-5">
-                <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Sparkles size={26} className="text-primary" />
+              <div className="flex-1 empty-state empty-state-compact gap-4 px-6">
+                <div className="icon-tile icon-tile-lg tone-primary">
+                  <Sparkles size={22} aria-hidden="true" />
                 </div>
                 <div className="space-y-1">
-                  <p className="font-semibold text-sm">Analyze with AI</p>
-                  <p className="text-xs text-muted-foreground leading-relaxed max-w-[220px]">
+                  <p className="empty-state-title">Analyze with AI</p>
+                  <p className="empty-state-text max-w-[240px]">
                     Automatically tag SRL events using Whisper transcription
                     and Praat prosodic/intonation analysis.
                   </p>
                 </div>
-                <div className="flex flex-col gap-2 w-full text-xs text-muted-foreground bg-secondary/20 rounded-lg p-3 text-right">
-                  <span className="flex items-center gap-2"><Mic size={11} className="text-primary shrink-0" /> תמלול בעברית (Whisper)</span>
-                  <span className="flex items-center gap-2"><Sparkles size={11} className="text-pink-400 shrink-0" /> ניתוח פיץ׳ ואינטונציה (Praat)</span>
-                  <span className="flex items-center gap-2"><Bot size={11} className="text-blue-400 shrink-0" /> קידוד SRL אוטומטי (GPT-4o)</span>
+                <div dir="rtl" lang="he" className="panel-inset w-full flex flex-col gap-2 text-xs text-secondary-foreground text-start">
+                  <span className="flex items-center gap-2"><Mic size={12} className="text-primary shrink-0" aria-hidden="true" /> תמלול בעברית (Whisper)</span>
+                  <span className="flex items-center gap-2"><Sparkles size={12} className="text-mo shrink-0" aria-hidden="true" /> ניתוח פיץ׳ ואינטונציה (Praat)</span>
+                  <span className="flex items-center gap-2"><Bot size={12} className="text-info shrink-0" aria-hidden="true" /> קידוד SRL אוטומטי (GPT-4o)</span>
                 </div>
                 <button
                   onClick={handleTriggerAnalysis}
-                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground py-2.5 rounded-md font-semibold text-sm transition-colors flex items-center justify-center gap-2 shadow-md shadow-primary/20"
+                  dir="rtl"
+                  className="btn btn-primary btn-lg btn-block"
                 >
-                  <Bot size={15} /> התחל ניתוח AI
+                  <Bot size={15} aria-hidden="true" /> התחל ניתוח AI
                 </button>
               </div>
             )}
 
             {/* Processing */}
             {aiStatus === "processing" && (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-6 gap-4">
-                <div className="relative w-14 h-14">
-                  <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
-                  <div className="absolute inset-0 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Bot size={20} className="text-primary" />
-                  </div>
+              <div dir="rtl" lang="he" className="flex-1 empty-state empty-state-compact gap-4 px-6">
+                <div className="relative size-14 grid place-items-center">
+                  <Loader2 className="absolute inset-0 size-14 text-primary/80 animate-spin" strokeWidth={1.5} aria-hidden="true" />
+                  <Bot size={20} className="text-primary" aria-hidden="true" />
                 </div>
-                <div>
-                  <p className="font-semibold text-sm">מנתח סרטון…</p>
-                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                <div className="space-y-1">
+                  <p className="empty-state-title">מנתח סרטון…</p>
+                  <p className="empty-state-text">
                     תמלול + ניתוח פרוסודי + קידוד SCOPE.<br />
                     תהליך זה אורך 2–5 דקות.
                   </p>
                 </div>
-                <div className="w-full bg-secondary/30 rounded-full h-1.5 overflow-hidden">
-                  <div className="h-full bg-primary/60 rounded-full shimmer" style={{ width: "60%" }} />
+                <div className="meter w-full bg-primary/15" aria-hidden="true">
+                  <div className="meter-fill meter-indeterminate" />
                 </div>
-                <p className="text-[10px] text-muted-foreground">בודק כל 5 שניות…</p>
+                <p className="text-2xs text-muted-foreground">בודק כל 5 שניות…</p>
                 {/* Show reset button if stuck for more than 5 minutes */}
                 {processingStartedAt && Date.now() - processingStartedAt > 5 * 60 * 1000 && (
-                  <div className="mt-2 space-y-1 text-center">
-                    <p className="text-[10px] text-amber-400">לוקח יותר מדי זמן?</p>
+                  <div className="mt-1 space-y-1 text-center">
+                    <p className="text-xs font-medium text-warning">לוקח יותר מדי זמן?</p>
                     <button onClick={handleForceReset}
-                      className="text-[10px] text-muted-foreground hover:text-destructive underline transition-colors">
+                      className="btn btn-link text-xs text-destructive">
                       אפס ונסה שוב
                     </button>
                   </div>
@@ -2115,11 +2206,16 @@ function TaggingModeInner() {
 
             {/* Failed */}
             {aiStatus === "failed" && (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-6 gap-4">
-                <p className="text-sm font-semibold text-destructive">הניתוח נכשל</p>
-                <p className="text-xs text-muted-foreground">בדוק שה-Python worker מותקן ושה-.env.local מכיל את המפתחות.</p>
+              <div dir="rtl" lang="he" className="flex-1 empty-state empty-state-compact gap-3 px-6">
+                <div className="icon-tile icon-tile-lg tone-danger">
+                  <AlertTriangle size={22} aria-hidden="true" />
+                </div>
+                <div className="space-y-1">
+                  <p className="empty-state-title text-destructive">הניתוח נכשל</p>
+                  <p className="empty-state-text">בדוק שה-Python worker מותקן ושה-.env.local מכיל את המפתחות.</p>
+                </div>
                 <button onClick={handleTriggerAnalysis}
-                  className="text-xs text-primary hover:underline">
+                  className="btn btn-secondary btn-sm">
                   נסה שוב
                 </button>
               </div>
@@ -2127,32 +2223,32 @@ function TaggingModeInner() {
 
             {/* Completed — show AI events (grouped by timestamp) */}
             {aiStatus === "completed" && aiEvents.length > 0 && (
-              <div className="flex flex-col h-full">
+              <div dir="rtl" lang="he" className="flex flex-col h-full">
                 {/* Header */}
-                <div className="px-4 py-2.5 border-b border-border flex items-center justify-between shrink-0">
-                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                    <Sparkles size={11} className="text-primary" />
+                <div className="panel-header gap-2">
+                  <span className="flex items-center gap-1.5 min-w-0 text-[13px] font-semibold">
+                    <Sparkles size={13} className="text-primary shrink-0" aria-hidden="true" />
                     {aiEvents.length} אירועי AI
                     {acceptedAiKeys.size > 0 && (
-                      <span className="text-primary">· {acceptedAiKeys.size} אושרו</span>
+                      <span className="font-normal text-muted-foreground">· {acceptedAiKeys.size} אושרו</span>
                     )}
                   </span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <button onClick={handleTriggerAnalysis}
-                      className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
-                      הרץ שוב
+                      className="btn btn-ghost btn-sm">
+                      <RotateCcw size={12} aria-hidden="true" /> הרץ שוב
                     </button>
                     {aiEvents.some(e => !acceptedAiKeys.has(e.key)) && (
                       <button onClick={handleAcceptAllAiEvents}
-                        className="flex items-center gap-1 text-[10px] bg-primary/10 text-primary hover:bg-primary/20 px-2 py-1 rounded transition-colors font-medium">
-                        <CheckCheck size={10} /> קבל הכל
+                        className="btn btn-soft btn-sm">
+                        <CheckCheck size={13} aria-hidden="true" /> קבל הכל
                       </button>
                     )}
                   </div>
                 </div>
 
-                {/* Event list */}
-                <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+                {/* Event list — rows separated by hairlines (no boxes) */}
+                <div className="flex-1 overflow-y-auto">
                   {aiEvents.map(event => {
                     const accepted = acceptedAiKeys.has(event.key);
                     const isProsodic = event.evidence_text?.startsWith("[PROSODIC]");
@@ -2161,65 +2257,60 @@ function TaggingModeInner() {
                       : event.evidence_text;
                     const conf = event.confidence_score ?? 0;
                     const confLabel = conf >= 0.8 ? "חזק" : conf >= 0.5 ? "בינוני" : "חלש";
-                    const confCls = conf >= 0.8
-                      ? "text-emerald-400 border-emerald-400/30"
-                      : conf >= 0.5
-                        ? "text-amber-400 border-amber-400/30"
-                        : "text-red-400 border-red-400/30";
+                    const confCls = strengthTone(conf);
 
                     return (
                       <div
                         key={event.key}
                         onClick={() => seekToTime(event.start_time)}
-                        className={`rounded-lg border transition-all cursor-pointer ${
+                        className={`flex flex-col gap-2 px-4 py-3.5 border-b border-border cursor-pointer transition-colors ${
                           accepted
-                            ? "border-primary/20 bg-primary/5 opacity-60"
-                            : "border-border hover:border-primary/30 hover:bg-secondary/30"
+                            ? "bg-success/6"
+                            : "hover:bg-accent"
                         }`}
                       >
-                        <div className="flex items-start gap-2 px-2.5 py-2">
-                          {/* Code chips */}
-                          <div className="flex flex-wrap gap-1 flex-1 min-w-0">
-                            {event.code_ids.map((codeId, i) => {
-                              const c = CODE_COLORS[codeId] ?? "#6366f1";
-                              return (
-                                <span key={`${codeId}-${i}`}
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border"
-                                  style={{ borderColor: c + "50", backgroundColor: c + "18", color: c }}>
-                                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: c }} />
-                                  {codeId}
-                                </span>
-                              );
-                            })}
-                          </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {/* Time */}
+                          <span dir="ltr" className="font-mono text-sm font-semibold tabular-nums text-foreground me-0.5">
+                            {formatTime(event.start_time)}
+                          </span>
 
-                          <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-semibold leading-none">AI</span>
-                            {isProsodic && (
-                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-400 font-semibold leading-none flex items-center gap-0.5">
-                                <Mic size={7} /> פרוסודי
+                          {/* Code chips */}
+                          {event.code_ids.map((codeId, i) => {
+                            const c = CODE_COLORS[codeId] ?? "#6366f1";
+                            return (
+                              <span key={`${codeId}-${i}`} dir="ltr"
+                                className="code-chip font-mono font-medium"
+                                style={{ "--code": c } as React.CSSProperties}>
+                                <span className="code-dot" aria-hidden="true" />
+                                {codeId}
                               </span>
-                            )}
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded border ${confCls} leading-none`}>
-                              {confLabel} {Math.round(conf * 100)}%
+                            );
+                          })}
+
+                          <span className="flex-1" aria-hidden="true" />
+                          <span dir="ltr" className="badge tone-primary">AI</span>
+                          {isProsodic && (
+                            <span className="badge tone-prosodic">
+                              <Mic size={10} aria-hidden="true" /> פרוסודי
                             </span>
-                            <span className="text-[10px] font-mono text-muted-foreground bg-background px-1.5 py-0.5 rounded">
-                              {formatTime(event.start_time)}
-                            </span>
-                          </div>
+                          )}
+                          <span className={`badge ${confCls}`}>
+                            {confLabel} {Math.round(conf * 100)}%
+                          </span>
                         </div>
 
                         {/* Evidence + reasoning */}
                         {(evidence || event.reasoning) && (
-                          <div className="px-2.5 pb-1 space-y-1">
+                          <div className="space-y-1.5">
                             {evidence && (
-                              <p className="text-[10px] text-muted-foreground leading-relaxed line-clamp-2" dir="rtl">
+                              <p className="reading text-foreground line-clamp-3" dir="rtl" title={evidence}>
                                 {evidence}
                               </p>
                             )}
                             {event.reasoning && (
-                              <p className="text-[10px] text-foreground/40 italic leading-relaxed line-clamp-3 border-t border-border/20 pt-1" dir="rtl">
-                                <span className="not-italic font-medium text-muted-foreground/50">נימוק: </span>{event.reasoning}
+                              <p className="reasoning-quote text-[13px] leading-relaxed line-clamp-3" dir="rtl">
+                                <span className="font-semibold text-foreground/80">נימוק: </span>{event.reasoning}
                               </p>
                             )}
                           </div>
@@ -2227,17 +2318,19 @@ function TaggingModeInner() {
 
                         {/* Accept button */}
                         {!accepted ? (
-                          <div className="px-2.5 pb-2">
+                          <div className="flex">
                             <button
                               onClick={e => { e.stopPropagation(); handleAcceptAiEvent(event); }}
-                              className="flex items-center gap-1 text-[10px] bg-primary/10 hover:bg-primary/20 text-primary px-2.5 py-1 rounded transition-colors font-medium w-full justify-center"
+                              className="btn btn-soft btn-sm"
                             >
-                              <Check size={10} /> קבל אירוע
+                              <Check size={13} aria-hidden="true" /> קבל אירוע
                             </button>
                           </div>
                         ) : (
-                          <div className="px-2.5 pb-2 flex items-center gap-1 text-[10px] text-primary/60">
-                            <Check size={10} /> נוסף לסשן
+                          <div className="flex">
+                            <span className="badge badge-lg tone-success">
+                              <Check size={12} aria-hidden="true" /> נוסף לסשן
+                            </span>
                           </div>
                         )}
                       </div>
@@ -2248,108 +2341,111 @@ function TaggingModeInner() {
             )}
 
             {aiStatus === "completed" && aiEvents.length === 0 && (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-6 gap-3">
-                <p className="text-sm font-semibold">לא זוהו אירועי SRL</p>
-                <p className="text-xs text-muted-foreground">נסה שוב עם סרטון אחר.</p>
+              <div dir="rtl" lang="he" className="flex-1 empty-state empty-state-compact gap-3 px-6">
+                <div className="icon-tile icon-tile-lg tone-neutral">
+                  <SearchX size={22} aria-hidden="true" />
+                </div>
+                <div className="space-y-1">
+                  <p className="empty-state-title">לא זוהו אירועי SRL</p>
+                  <p className="empty-state-text">נסה שוב עם סרטון אחר.</p>
+                </div>
               </div>
             )}
           </div>
         )}
 
-        {/* Scrollable body: chips → divider → form */}
+        {/* Scrollable body: chips → sticky selected-codes bar → numbered form */}
         {rightTab !== "AI" && (
         <div className="flex-1 overflow-y-auto">
 
-          {/* Code chips — all visible, grouped by thin category labels */}
-          <div className="pb-2">
+          {/* Code chips — all visible, grouped by sticky category labels */}
+          <div className="pb-3">
             {visibleCategories.map(({ category, codes }) => {
               if (codes.length === 0) return null;
               return (
                 <div key={category}>
-                  <p className="px-4 pt-3 pb-1.5 text-xs font-semibold text-muted-foreground/60 uppercase tracking-widest">
-                    {category}
+                  <p className="sticky top-0 z-10 bg-card/95 px-4 pt-3 pb-2 eyebrow flex items-baseline gap-2">
+                    <span>{category}</span>
+                    {!codeSearch.trim() && (
+                      <span className="font-mono font-medium normal-case tracking-normal tabular-nums text-muted-foreground/80">{codes.length}</span>
+                    )}
                   </p>
-                  <div className="px-3 pb-1 flex flex-wrap gap-1.5">
-                    {codes.map(code => (
-                      <button
-                        key={code.id}
-                        onClick={() => toggleCode(code.id)}
-                        onMouseEnter={(e) => {
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          setTooltip({ id: code.id, description: (code as typeof code & { description?: string }).description ?? "", x: rect.left + rect.width / 2, y: rect.top - 6 });
-                        }}
-                        onMouseLeave={() => setTooltip(null)}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all border ${
-                          selectedCodes.has(code.id)
-                            ? "border-primary/50 bg-primary/10 text-primary ring-1 ring-primary/20"
-                            : "border-border bg-secondary/20 text-muted-foreground hover:border-primary/30 hover:text-foreground hover:bg-secondary/40"
-                        }`}
-                      >
-                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: code.color }} />
-                        {code.id}
-                      </button>
-                    ))}
+                  <div className="px-4 pb-1.5 flex flex-wrap gap-1.5">
+                    {codes.map(code => {
+                      const selected = selectedCodes.has(code.id);
+                      return (
+                        <button
+                          key={code.id}
+                          onClick={() => toggleCode(code.id)}
+                          onMouseEnter={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setTooltip({ id: code.id, description: (code as typeof code & { description?: string }).description ?? "", x: rect.left + rect.width / 2, y: rect.top - 6 });
+                          }}
+                          onMouseLeave={() => setTooltip(null)}
+                          onFocus={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setTooltip({ id: code.id, description: (code as typeof code & { description?: string }).description ?? "", x: rect.left + rect.width / 2, y: rect.top - 6 });
+                          }}
+                          onBlur={() => setTooltip(null)}
+                          aria-pressed={selected}
+                          className="chip-toggle font-mono"
+                          style={{ "--code": code.color } as React.CSSProperties}
+                        >
+                          {selected
+                            ? <Check size={12} strokeWidth={3} className="shrink-0" aria-hidden="true" />
+                            : <span className="code-dot size-2" aria-hidden="true" />}
+                          {code.id}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* Divider */}
-          <div className="mx-4 my-3 border-t border-border" />
-
           {/* Annotation form fields */}
-          <div className="px-4 pb-4 space-y-4">
+          <div className="px-4 pb-5 space-y-5">
 
-            {/* Selected codes badges */}
-            {selectedCodes.size > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {[...selectedCodes].map(codeId => {
-                  const codeData = PRISM_CODE_LOOKUP[codeId];
-                  if (!codeData) return null;
-                  return (
-                    <div
-                      key={codeId}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium"
-                      style={{ borderColor: codeData.color + "40", backgroundColor: codeData.color + "15" }}
-                    >
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: codeData.color }} />
-                      <span className="font-bold">{codeData.id}</span>
-                      <button
-                        onClick={() => toggleCode(codeId)}
-                        className="ml-0.5 text-muted-foreground hover:text-foreground transition-colors"
-                        title="Remove"
+            {/* Selected codes — sticky bar (also the divider between the codebook and the form) */}
+            <div className="sticky top-0 z-10 -mx-4 px-4 py-2.5 bg-card/95 border-y border-border">
+              {selectedCodes.size > 0 ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[...selectedCodes].map(codeId => {
+                    const codeData = PRISM_CODE_LOOKUP[codeId];
+                    if (!codeData) return null;
+                    return (
+                      <div
+                        key={codeId}
+                        className="code-chip code-chip-md font-mono pe-1"
+                        style={{ "--code": codeData.color } as React.CSSProperties}
                       >
-                        <X size={11} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground italic">לחץ על קוד למעלה כדי לבחור</p>
-            )}
+                        <span className="code-dot size-2" aria-hidden="true" />
+                        <span className="font-semibold">{codeData.id}</span>
+                        <button
+                          onClick={() => toggleCode(codeId)}
+                          className="icon-btn icon-btn-sm size-5 rounded-full"
+                          title="Remove"
+                          aria-label="Remove"
+                        >
+                          <X size={11} aria-hidden="true" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p dir="rtl" className="text-[13px] leading-7 text-muted-foreground">לחץ על קוד למעלה כדי לבחור</p>
+              )}
+            </div>
 
-            {/* Time range */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                <Clock size={12} /> Time Range
+            {/* 1 · Time range — larger m:ss fields, set-in/out buttons under them */}
+            <div className="space-y-2.5">
+              <label className={STEP_LABEL}>
+                <span className="step-num" aria-hidden="true">1</span> Time Range
               </label>
-              <div className="space-y-1.5">
-                {!isEmbedMode && (
-                  <div className="flex items-center gap-2">
-                    <button onClick={handleSetStartTime}
-                      className="flex-1 py-1.5 rounded-md text-xs transition-all border bg-secondary hover:bg-secondary/80 border-border text-muted-foreground">
-                      ← הגדר כניסה
-                    </button>
-                    <span className="text-muted-foreground text-xs">–</span>
-                    <button onClick={handleSetEndTime}
-                      className="flex-1 py-1.5 rounded-md text-xs transition-all border bg-secondary hover:bg-secondary/80 border-border text-muted-foreground">
-                      הגדר יציאה →
-                    </button>
-                  </div>
-                )}
-                <div className="flex items-center gap-2">
+              <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0 flex flex-col gap-1.5">
                   <input
                     type="text"
                     value={startTimeText}
@@ -2363,9 +2459,19 @@ function TaggingModeInner() {
                       if (startTime !== "") setStartTimeText(formatTime(startTime as number));
                     }}
                     placeholder="0:00"
-                    className="flex-1 bg-background border border-border rounded-md px-3 py-1.5 font-mono text-sm focus:outline-none focus:border-primary text-center"
+                    aria-label="Start time"
+                    dir="ltr"
+                    className={`field h-10 text-md font-mono tabular-nums text-center ${startTime !== "" ? "border-primary/40 focus:border-ring" : ""}`}
                   />
-                  <span className="text-muted-foreground text-xs">–</span>
+                  {!isEmbedMode && (
+                    <button onClick={handleSetStartTime}
+                      className="btn btn-secondary btn-sm">
+                      ← הגדר כניסה
+                    </button>
+                  )}
+                </div>
+                <span className="h-10 inline-flex items-center text-muted-foreground text-xs" aria-hidden="true">–</span>
+                <div className="flex-1 min-w-0 flex flex-col gap-1.5">
                   <input
                     type="text"
                     value={endTimeText}
@@ -2379,66 +2485,81 @@ function TaggingModeInner() {
                       if (endTime !== "") setEndTimeText(formatTime(endTime as number));
                     }}
                     placeholder="0:00"
-                    className="flex-1 bg-background border border-border rounded-md px-3 py-1.5 font-mono text-sm focus:outline-none focus:border-primary text-center"
+                    aria-label="End time"
+                    dir="ltr"
+                    className={`field h-10 text-md font-mono tabular-nums text-center ${endTime !== "" ? "border-primary/40 focus:border-ring" : ""}`}
                   />
+                  {!isEmbedMode && (
+                    <button onClick={handleSetEndTime}
+                      className="btn btn-secondary btn-sm">
+                      הגדר יציאה →
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
 
-            {/* Confidence */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                <ShieldCheck size={12} /> עוצמת התיוג
+            {/* 2 · Confidence — segmented, Hebrew group */}
+            <div dir="rtl" className="space-y-2.5">
+              <label className={STEP_LABEL}>
+                <span className="step-num" aria-hidden="true">2</span> עוצמת התיוג
               </label>
-              <div className="grid grid-cols-3 gap-1.5">
+              <div role="group" aria-label="עוצמת התיוג" className="segmented flex w-full">
                 {[
-                  { label: "חלש",   value: 0.33, active: "border-red-500/60 text-red-400 bg-red-500/10" },
-                  { label: "בינוני", value: 0.66, active: "border-yellow-500/60 text-yellow-400 bg-yellow-500/10" },
-                  { label: "חזק",   value: 1.0,  active: "border-green-500/60 text-green-400 bg-green-500/10" },
+                  { label: "חלש",   value: 0.33 },
+                  { label: "בינוני", value: 0.66 },
+                  { label: "חזק",   value: 1.0 },
                 ].map(opt => (
                   <button key={opt.value} type="button" onClick={() => setConfidenceScore(opt.value)}
-                    className={`py-2 rounded-md text-sm font-semibold border transition-all ${
-                      confidenceScore === opt.value ? `${opt.active} shadow-sm` : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
-                    }`}>
+                    aria-pressed={confidenceScore === opt.value}
+                    className="segmented-item flex-1 h-8 text-[13px]">
+                    <span className={`status-dot size-2 ${strengthTone(opt.value)}`} aria-hidden="true" />
                     {opt.label}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Evidence */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                <AlignLeft size={12} /> עדות מהטקסט
+            {/* 3 · Evidence */}
+            <div dir="rtl" className="space-y-2.5">
+              <label htmlFor="new-tag-evidence" className={STEP_LABEL}>
+                <span className="step-num" aria-hidden="true">3</span> עדות מהטקסט
               </label>
               <textarea
+                id="new-tag-evidence"
                 value={evidenceText}
                 onChange={(e) => setEvidenceText(e.target.value)}
                 rows={2}
                 placeholder='למשל: "המורה שואלת: בואו נחשוב מה למדנו היום..."'
-                className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-primary resize-none"
+                className="field resize-none"
                 dir="rtl"
               />
             </div>
 
-            {/* Reasoning */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                <AlignLeft size={12} /> נימוק
+            {/* 4 · Reasoning */}
+            <div dir="rtl" className="space-y-2.5">
+              <label htmlFor="new-tag-reasoning" className={STEP_LABEL}>
+                <span className="step-num" aria-hidden="true">4</span> נימוק
               </label>
               <textarea
+                id="new-tag-reasoning"
                 value={reasoningText}
                 onChange={(e) => setReasoningText(e.target.value)}
                 rows={3}
                 placeholder='למה בחרת בקוד זה? אילו קריטריוני הכרעה הנחו אותך? למשל: "המורה נתנה שם לאסטרטגיה והסבירה מתי להשתמש בה — לכן TDS_META ולא TDS_COG."'
-                className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-primary resize-none"
+                className="field resize-none"
                 dir="rtl"
               />
             </div>
 
-            {/* ── TDS Meta-Coding panel ─────────────────────────────────── */}
+            {/* ── 5 · TDS Meta-Coding panel ─────────────────────────────── */}
             {hasTdsCode && (
-              <TdsMetaPanel form={tdsMetaForm} onChange={setTdsMetaForm} />
+              <TdsMetaPanel
+                form={tdsMetaForm}
+                onChange={setTdsMetaForm}
+                step={5}
+                shortcutsActive={!isEditingTdsMeta}
+              />
             )}
 
           </div>
@@ -2447,13 +2568,13 @@ function TaggingModeInner() {
 
         {/* Sticky bottom: Add Tag button — hidden on AI tab */}
         {rightTab !== "AI" && (
-        <div className="shrink-0 p-4 border-t border-border bg-secondary/5">
+        <div className="shrink-0 px-4 pt-3 pb-4 border-t border-border bg-card">
           <button
             onClick={handleSaveTag}
             disabled={startTime === "" || endTime === "" || selectedCodes.size === 0}
-            className="w-full bg-primary hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed text-primary-foreground py-2.5 rounded-md font-semibold transition-colors flex justify-center items-center gap-2 text-sm shadow-md shadow-primary/20"
+            className="btn btn-primary btn-lg btn-block h-11 rounded-xl text-[15px]"
           >
-            <Tag size={15} /> Add Tag{selectedCodes.size > 1 ? ` (${selectedCodes.size})` : ""}
+            <Tag size={16} aria-hidden="true" /> Add Tag{selectedCodes.size > 1 ? ` (${selectedCodes.size})` : ""}
           </button>
         </div>
         )}
