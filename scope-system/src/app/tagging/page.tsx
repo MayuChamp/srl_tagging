@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import React, { useState, useRef, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { VideoPlayer, type VideoMarker, type Caption } from "@/components/video/VideoPlayer";
@@ -1723,6 +1725,7 @@ function TaggingModeInner() {
 
           {/* Status bar */}
           <div className="flex items-center gap-4 px-4 py-1.5 border-t border-border bg-secondary/10 text-xs text-muted-foreground shrink-0">
+            {loadedVideoId && <Link href={`/videos/${loadedVideoId}/environment`} className="text-primary hover:underline">סביבת הלמידה · Indirect SRL</Link>}
             <span className="flex items-center gap-1.5">
               <Tag size={11} className="text-primary" />
               <span className="font-medium text-foreground">{markers.length}</span> tag{markers.length !== 1 ? "s" : ""}

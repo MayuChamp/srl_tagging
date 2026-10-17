@@ -102,8 +102,8 @@ Use BOTH to identify SRL events. Prosodic features help detect codes that text a
 Prosodic Features Guide:
 - RISING pitch_trend + high pitch_range (>30Hz) → SRL_MON (self-questioning), ST_MON
 - HIGH intensity (>70dB) + wide pitch range → TDS_MOT (motivational emphasis)
-- Long pauses (>1.5s) after teacher speech → SRL_MON, SRL_CTRL (wait time / think time)
-- Low voiced_ratio (<0.3) = silence / thinking time → SRL_REFL, SRL_PLAN
+- Long pauses (>1.5s) after teacher speech → observable pause only; SRL opportunity requires explicit contextual evidence.
+- Low voiced_ratio (<0.3) → limited detected speech, not proof of thinking, reflection or planning.
 - Stable moderate pitch + clear explanation → TDS_COG or TDS_META + EX_EXPL
 - Rising end-of-utterance at moderate intensity → TDS_MOT (encouragement)
 When the primary evidence is prosodic (not textual), prefix evidence_text with [PROSODIC].
@@ -271,10 +271,11 @@ Use these rules on the PROSODIC/INTONATION ANALYSIS data to tag events not visib
     → N_EMOTION_DISPLAY  (and consider TDS_MOT for motivational energy)
 
   Long pause (> 1.5 s) immediately after teacher speech
-    → teacher providing wait time → tag as SRL_MON or SRL_REFL opportunity for students
+    → observable pause. Only code an SRL opportunity when the instructions/context support it;
+      never infer student uptake from the pause itself.
 
-  Low voiced_ratio (< 0.25) across a window = sustained silence / thinking time
-    → tag surrounding context as SRL_PLAN or SRL_REFL
+  Low voiced_ratio (< 0.25) across a window = limited detected speech
+    → do not assign SRL_PLAN or SRL_REFL without additional behavioral/verbal evidence.
 
   Marked mid-discourse pitch rise (not at utterance end)
     → N_ATTENTION (calling attention to something important)

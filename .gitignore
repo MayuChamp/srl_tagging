@@ -19,3 +19,4 @@ ai_worker/chunks/chunk_003.mp4
 ai_worker/chunks/chunk_004.mp4
 ai_worker/chunks/*.mp4
 ai_worker/chunks/temp_*/
+ai_worker/chunks/environment-validation*/

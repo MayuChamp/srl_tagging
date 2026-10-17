@@ -19,12 +19,19 @@ if _missing:
 
 # Delayed import — main.py calls genai.Client() at module load, needs GEMINI_API_KEY set first
 from main import process_pending_videos
+from environment_worker import process_pending_environment
+from main import supabase
 
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL_SECONDS", "60"))
 
 print(f"AI Worker started — polling every {POLL_INTERVAL}s for pending videos...")
 while True:
     try:
+        if os.getenv("ENABLE_ENVIRONMENT_ANALYSIS", "false").lower() == "true":
+            try:
+                process_pending_environment(supabase)
+            except Exception as error:
+                print("Environment queue unavailable (%s); direct SRL processing will continue." % type(error).__name__)
         process_pending_videos()
     except Exception as e:
         print(f"[worker] Unhandled error in poll cycle: {e}")

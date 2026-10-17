@@ -126,6 +126,7 @@ export default async function VideoDetailPage({
           {video.status}
         </span>
       </header>
+      <Link href={`/videos/${id}/environment`} className="inline-flex text-sm text-primary hover:underline">ניתוח סביבת הלמידה · Indirect SRL</Link>
 
       {!analysis ? (
         <div className="bg-card border border-dashed border-border rounded-xl p-12 flex flex-col items-center justify-center text-muted-foreground gap-3">
