@@ -137,14 +137,24 @@ def analyze_overview(rows, macro, models, snapshot=None, total_windows=None, hea
     tagging = prepare_tagging(snapshot)
     rejected = {i['episode_id'] for i in macro.get('audit', {}).get('issues', [])}
     episodes = [e for e in macro['episodes'] if e['id'] not in rejected]
-    payload = {'samples': sources, 'audited_episodes': episodes, 'tagging': tagging}
+    admissible_refs = {ref for episode in episodes for ref in episode['evidence_ids']}
+    admissible_windows = {index for episode in episodes for index in episode['window_indices']}
+    eligible_sources = [dict(s, evidence=[e for e in s['evidence'] if e['id'] in admissible_refs])
+                        for s in sources if s['window_index'] in admissible_windows]
+    payload = {'samples': eligible_sources, 'audited_episodes': episodes, 'tagging': tagging,
+               'allowed_episode_ids': [e['id'] for e in episodes],
+               'allowed_evidence_ids': sorted(admissible_refs)}
     if len(json.dumps(payload, ensure_ascii=False)) > 1200000:
         raise ValueError('Overview input exceeds pilot limit')
-    candidate = models.synthesize_overview(payload)
+    insufficient = not episodes and not (tagging or {}).get('tags')
+    # An empty admissible source set is a valid abstention, not a provider failure.
+    # Do not ask a model to invent citations or pay for an ungroundable synthesis.
+    candidate = ({**{key: [] for key in SECTIONS}, 'limitations': []} if insufficient
+                 else models.synthesize_overview(payload))
     validate_overview(candidate, episodes, sources, tagging)
     if heartbeat:
         heartbeat()
-    audit = models.audit_overview(candidate, payload)
+    audit = {'issues': []} if insufficient else models.audit_overview(candidate, payload)
     validate_schema(audit, AUDIT_SCHEMA)
     item_ids = {item['id'] for section in SECTIONS for item in candidate[section]}
     if any(i['item_id'] not in item_ids for i in audit['issues']):
@@ -159,10 +169,12 @@ def analyze_overview(rows, macro, models, snapshot=None, total_windows=None, hea
         [episode_times[e] for e in item['episode_ids']] +
         [tag_times[t] for t in item['tag_ids']], default=0))
     result.update(status='completed', protocol_version=VERSION,
-        narrative='תמונת על מתוך הדגימות שנבדקו, עם הבחנה בין ממצאים, פרשנות והצעות להרחבה.',
+        evidence_status='insufficient' if insufficient else 'available',
+        narrative=('לא ניתן לבסס מסקנה כוללת: לא נותרו אפיזודות שעברו ביקורת ראיות ואין תיוג זמין להסתמך עליו. התצפיות והאפיזודות לבדיקה נשמרו; אין בכך הוכחה להיעדר תמיכה בהכוונה עצמית.'
+                   if insufficient else 'תמונת על מתוך הדגימות שנבדקו, עם הבחנה בין ממצאים, פרשנות והצעות להרחבה.'),
         tagging_session_id=tagging['session_id'] if tagging else None,
         coverage={'completed_windows': len(sources), 'total_windows': total_windows if total_windows is not None else len(rows)},
-        audit={'performed': True, 'issues': audit['issues'], 'original_candidate': candidate if flagged else None})
+        audit={'performed': not insufficient, 'issues': audit['issues'], 'original_candidate': candidate if flagged else None})
     result['limitations'].extend([
         'הדגימות אינן תיעוד רציף; היעדר פעולה מהתמונה אינו הוכחה להחמצת הזדמנות.',
         'ביקורת מודל אינה תיקוף אנושי; אין כאן מדידה של התפתחות יכולת הכוונה עצמית.'])

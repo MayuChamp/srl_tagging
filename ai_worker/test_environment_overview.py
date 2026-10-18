@@ -103,13 +103,43 @@ class OverviewTests(unittest.TestCase):
         self.assertEqual(len(result['audit']['original_candidate']['progression']), 1)
         self.assertEqual(len(value['progression']), 1)
 
-    def test_rejected_macro_episode_cannot_be_revived(self):
+    def test_all_rejected_abstains_without_provider_calls(self):
         sources, macro, value, _ = overview_fixture()
         macro['audit'] = {'issues': [{'episode_id': 'e1'}]}
         class Fake:
-            def synthesize_overview(self, payload): return value
+            def synthesize_overview(self, payload): raise AssertionError('No billable synthesis needed')
+            def audit_overview(self, candidate, payload): raise AssertionError('No audit needed')
+        for snapshot in (None, {'session_id': 'empty', 'tags': []}):
+            result = analyze_overview([dict(sources[0], status='completed')], macro, Fake(), snapshot, 31)
+            self.assertEqual(result['status'], 'completed')
+            self.assertEqual(result['evidence_status'], 'insufficient')
+            self.assertFalse(result['audit']['performed'])
+            self.assertEqual(result['coverage'], {'completed_windows': 1, 'total_windows': 31})
+            self.assertTrue(all(not result[key] for key in SECTIONS))
+
+    def test_rejected_episode_cannot_return_through_tagged_synthesis(self):
+        sources, macro, value, tagging = overview_fixture()
+        macro['audit'] = {'issues': [{'episode_id': 'e1'}]}
+        class Fake:
+            def synthesize_overview(self, payload):
+                self.payload = payload
+                return value
+        model = Fake()
         with self.assertRaises(ValueError):
-            analyze_overview([dict(sources[0], status='completed')], macro, Fake())
+            analyze_overview([dict(sources[0], status='completed')], macro, model, tagging)
+        self.assertEqual(model.payload['samples'], [])
+        self.assertEqual(model.payload['allowed_episode_ids'], [])
+
+    def test_tag_only_analysis_remains_possible_after_episode_rejection(self):
+        sources, macro, value, tagging = overview_fixture()
+        macro['audit'] = {'issues': [{'episode_id': 'e1'}]}
+        value['progression'][0].update(basis='tagging', episode_ids=[], evidence_ids=[], tag_ids=['tag1'])
+        class Fake:
+            def synthesize_overview(self, payload): return value
+            def audit_overview(self, candidate, payload): return {'issues': []}
+        result = analyze_overview([dict(sources[0], status='completed')], macro, Fake(), tagging)
+        self.assertEqual(result['progression'][0]['basis'], 'tagging')
+        self.assertEqual(result['evidence_status'], 'available')
 
 
 if __name__ == '__main__': unittest.main()
